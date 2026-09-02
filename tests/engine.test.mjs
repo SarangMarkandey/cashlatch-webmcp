@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { freshDemoState } from "../src/demo.mjs";
+import { createBlankWorkspace, freshDemoState } from "../src/demo.mjs";
 import {
   applyCommittedPlan,
   calculateGoalPlan,
@@ -9,6 +9,26 @@ import {
   parseTransactionCsv,
   simulateAllocation,
 } from "../src/engine.mjs";
+
+test("creates an empty real workspace in the selected currency", () => {
+  const state = createBlankWorkspace({
+    name: "Freelance",
+    workspaceType: "independent",
+    currency: "USD",
+    checking: 1250.5,
+    monthlyIncome: 3000,
+    minimumReserve: 500,
+    maximumAllocation: 250,
+  });
+
+  assert.equal(state.name, "Freelance");
+  assert.equal(state.currency, "USD");
+  assert.equal(state.checkingMinor, 125050);
+  assert.equal(state.boundaries.minimumReserveMinor, 50000);
+  assert.deepEqual(state.goals, []);
+  assert.deepEqual(state.commitments, []);
+  assert.equal(state.isDemo, false);
+});
 
 test("safe allocation remains above obligations and reserve", () => {
   const state = freshDemoState();

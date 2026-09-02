@@ -2,97 +2,104 @@
 
 **Financial plans that expire when reality changes.**
 
-CashLatch is an AI-assisted cash-planning workspace built for the OpenAI WebMCP Challenge. It helps individuals, households, independent workers, and small operators allocate money across upcoming commitments and multiple goals while enforcing user-defined boundaries.
+CashLatch is a browser-local financial planning workspace built for the OpenAI WebMCP Challenge. A person can create separate workspaces, choose a currency, record balances, bills and goals, and then ask ChatGPT to organize the information or compare possible allocations.
 
-An agent can inspect current financial state, forecast cash flow, calculate goal contributions, simulate alternatives, and stage a plan. It cannot commit a plan by default. Human approval dynamically creates a one-use, state-bound WebMCP capability. The capability is removed after execution, after two minutes, or whenever relevant financial state changes.
+ChatGPT can prepare changes and plans through the site's tools. CashLatch remains the system of record: it performs deterministic checks, shows consequential proposals on the webpage, and requires the person to approve an exact plan before it can be applied to the CashLatch ledger.
+
+## Start as a real user
+
+CashLatch no longer opens with sample finances. On first visit, choose one of two paths:
+
+1. **Create my workspace** — enter a name, type, currency, available balance, estimated income and two safety limits.
+2. **Try fictional demo** — open a clearly labelled sample workspace for the challenge walkthrough.
+
+Each workspace keeps separate balances, goals, monthly commitments, transactions, plans, receipts and activity. Workspaces are organizational boundaries inside one browser profile; they are not separate authenticated users.
+
+With the page open in ChatGPT's browser, a person can also say:
+
+> Create a Personal workspace in INR. My balance is ₹76,000, income is ₹80,000, I want to protect ₹25,000, and no plan should allocate more than ₹15,000.
+
+ChatGPT prepares a draft on the CashLatch page. The person reviews it and selects **Create workspace**. Goals and commitments can then be added manually or through chat.
+
+## Human and agent responsibilities
+
+| Action | ChatGPT | CashLatch webpage | Human |
+| --- | --- | --- | --- |
+| Read current workspace | Uses a site tool | Returns structured current state | Requests the analysis |
+| Create a workspace | Prepares a draft | Shows all entered values | Confirms creation |
+| Add goals or bills | Can add or update them | Saves them and refreshes forecasts | Can inspect/edit them |
+| Change safety limits | Can only propose | Shows old and new limits | Accepts or rejects |
+| Prepare an allocation | Compares and stages | Checks the exact amounts | Reviews and approves |
+| Apply an allocation | Can call a temporary tool | Revalidates and updates the local ledger once | Must have approved first |
 
 ## Why WebMCP?
 
-Uploading a statement to an LLM produces advice from a static snapshot. CashLatch exposes a persistent operational workspace:
+A normal chat can calculate from text, but it does not own CashLatch's current state or controls. WebMCP lets the same conversation work with the live webpage instead of copying numbers back and forth:
 
-- Structured accounts, goals, commitments, transactions, and boundaries.
-- Deterministic calculations instead of prompt-only guardrails.
-- Visible staged plans that a person can inspect.
-- Dynamic execution authority that does not exist before human approval.
-- Automatic revocation when approved conditions change.
-- One-use commitment, goal-ledger updates, receipts, and an activity trail.
+- ChatGPT can read the currently selected workspace.
+- ChatGPT can update visible goals, commitments and financial events.
+- CashLatch performs its own forecast and allocation checks.
+- The human sees workspace and boundary proposals on the webpage.
+- Applying a plan is impossible until webpage approval creates a temporary capability.
+- Any financial change cancels that capability, forcing a fresh plan.
 
-The agent reasons. CashLatch enforces. The human authorizes.
+The agent reasons. CashLatch enforces. The human controls consequential action.
 
 ## WebMCP tools
 
-CashLatch registers six permanent tools in the top-level page:
+CashLatch registers eleven permanent site tools:
 
 | Tool | Effect |
 | --- | --- |
-| `get_financial_context` | Reads accounts, goals, commitments, boundaries, staged plan, and state version |
+| `get_financial_context` | Reads the active workspace or reports that none exists |
 | `get_transactions` | Reads filtered transaction history |
+| `create_workspace_draft` | Prepares a workspace for human confirmation on the page |
+| `add_or_update_goal` | Adds or updates a visible financial goal |
+| `add_or_update_commitment` | Adds or updates a recurring monthly commitment |
+| `record_financial_event` | Records income or an expense and changes the current balance |
+| `propose_boundary_change` | Shows proposed safety limits for human acceptance or rejection |
 | `forecast_cashflow` | Calculates a deterministic 30/60/90-day outlook |
 | `calculate_goal_plan` | Calculates required contributions and monthly feasibility |
-| `simulate_allocation` | Tests one exact goal allocation against every boundary |
-| `stage_allocation_plan` | Writes a proposal into the shared UI for human review |
+| `simulate_allocation` | Tests an exact allocation against saved boundaries |
+| `stage_allocation_plan` | Places an exact proposal in the page for human review |
 
-After the human approves an exact valid plan, CashLatch dynamically registers one additional tool:
+After the human approves an exact valid plan, CashLatch dynamically registers:
 
 ```text
 commit_plan_<permit-id>
 ```
 
-That tool:
-
-- Accepts no plan or amount inputs.
-- Is bound to the approved plan and exact financial-state fingerprint.
-- Expires after two minutes.
-- Revalidates the state version, fingerprint, plan identity, and boundaries.
-- Can commit once.
-- Is unregistered after use or any relevant state change.
-
-The SHA-256 fingerprint is a deterministic stale-state detector, not a digital signature or server-side security boundary.
+This temporary tool accepts no replacement amount or plan. It is tied to the exact plan, workspace state version and SHA-256 state fingerprint; expires after two minutes; rechecks all boundaries; works once; and disappears after use or any financial-state change. The fingerprint is a stale-state detector, not a digital signature or server-side security boundary.
 
 ## Run locally
 
 No dependency installation or OpenAI API key is required.
 
 ```bash
-node server.mjs
+npm run dev
 ```
 
-Open `http://localhost:4173`.
-
-For WebMCP tool discovery, use ChatGPT's in-app browser or Chrome 149+ with `chrome://flags/#enable-webmcp-testing` enabled.
+Open `http://localhost:4173`. For WebMCP discovery, use ChatGPT's compatible browser flow or a supported Chrome build with WebMCP testing enabled.
 
 ## Test
 
 ```bash
-node --test tests/*.test.mjs
+npm test
 ```
 
-Tests cover:
+The tests cover workspace creation and currency, safe and blocked allocations, stale financial state, ledger application, goal planning, forecasting, CSV parsing, and registration/revocation of permanent and dynamic tools.
 
-- Valid multi-goal allocation.
-- Maximum-allocation rejection.
-- Reserve-floor rejection after a surprise expense.
-- One-time plan application to balances and goals.
-- Goal-plan calculations and cash forecasting.
-- CSV parsing.
-- Registration and revocation of permanent and dynamic WebMCP tools.
+## Challenge demo path
 
-## Two-minute demo path
-
-1. Open the deployed CashLatch workspace.
-2. Ask the agent:
-
-   > Help me fund my goals without putting my next 30 days of commitments or ₹25,000 reserve at risk. Compare the trade-offs, then stage your recommendation.
-
-3. The agent reads context, forecasts, calculates goals, simulates, and stages a ₹15,000 allocation.
-4. The human reviews and selects **Authorize exact plan**.
-5. Show `commit_plan_<permit-id>` appear in the Agent Access panel and the WebMCP tool list.
-6. Before execution, select **Simulate ₹20k surprise expense**.
-7. Show the approved plan become stale and the commit capability disappear.
-8. Ask the agent to re-plan under the same reserve.
-9. Approve the new lower allocation.
-10. Ask the agent to commit it.
-11. Show checking and goal balances update, the receipt appear, and the tool disappear after one use.
+1. Open CashLatch and choose **Try fictional demo**.
+2. Ask ChatGPT to inspect the workspace, forecast 30/60/90 days, compare allocations and stage the safest plan without authorizing it.
+3. Review the plan on the webpage and select **Approve this exact plan**.
+4. Observe the one-use apply capability become available.
+5. Before applying, select the fictional unexpected-expense button.
+6. Observe the plan become stale and the capability disappear.
+7. Ask ChatGPT to reread the workspace and prepare another plan.
+8. Approve it, then ask ChatGPT to apply the approved plan.
+9. Observe the local checking balance, goal ledger, receipt and activity trail update; the temporary tool disappears after its single use.
 
 ## CSV format
 
@@ -104,31 +111,32 @@ date,description,amount
 2026-08-02,Rent,-12000
 ```
 
-CSV imports add context to the transaction history. They do not recalculate the manually supplied current checking balance.
+CSV imports add transaction history to the active workspace. They do not change the manually entered current checking balance.
 
 ## Privacy model
 
-- Workspace state is stored in browser `localStorage`.
-- CashLatch does not upload or store the workspace on its own server.
-- Information returned by a WebMCP tool is shared with the browser agent asked to use the page.
-- The demo uses fictional data. Users should understand their agent provider's data controls before supplying real financial information.
+- Workspace state is stored in browser `localStorage`; CashLatch has no financial-data backend.
+- The active workspace alone is available to its page tools.
+- Information returned by a WebMCP tool is intentionally shared with the browser agent the person asks to use the page.
+- Different devices or browser profiles have separate storage. Multiple workspaces in one profile are organization, not access control.
+- Anyone with access to the same browser profile may be able to read its local data.
 
 ## Limitations
 
-- CashLatch is a financial-planning prototype, not a bank connection or investment adviser.
-- “Within configured boundaries” means only that the entered data passes the deterministic rules. Unentered expenses are not included.
-- Committing updates the CashLatch allocation ledger; it does not move real bank funds.
+- CashLatch is a planning prototype, not a bank connection or investment adviser.
+- Applying a plan updates CashLatch's local allocation ledger; it does not move bank funds.
+- Forecasts use only entered income and commitments. Unknown expenses are not included.
+- Changing currency changes display formatting; it does not convert existing amounts.
 - Permits are intentionally not restored after refresh or tab close.
 
 ## Technology
 
-- Standards-based HTML, CSS, and JavaScript modules.
+- Standards-based HTML, CSS and JavaScript modules.
 - WebMCP imperative API through `document.modelContext.registerTool`.
 - Web Crypto SHA-256 state fingerprints.
-- Browser-local persistence.
+- Browser-local, multi-workspace persistence.
 - Dependency-free Node static server for local testing.
 
 ## License
 
 MIT
-# cashlatch-webmcp

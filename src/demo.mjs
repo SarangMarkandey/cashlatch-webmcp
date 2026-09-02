@@ -1,5 +1,9 @@
 export const DEMO_STATE = {
   schemaVersion: 1,
+  id: "demo-workspace",
+  name: "Fictional demo",
+  isDemo: true,
+  createdAt: "2026-09-01T00:00:00.000Z",
   workspaceType: "household",
   currency: "INR",
   checkingMinor: 7600000,
@@ -60,5 +64,51 @@ export const DEMO_STATE = {
 };
 
 export function freshDemoState() {
-  return structuredClone(DEMO_STATE);
+  const state = structuredClone(DEMO_STATE);
+  state.id = `workspace-${crypto.randomUUID().slice(0, 8)}`;
+  state.createdAt = new Date().toISOString();
+  state.activity[0].at = new Date().toISOString();
+  return state;
+}
+
+export function createBlankWorkspace({
+  name,
+  workspaceType = "personal",
+  currency = "INR",
+  checking = 0,
+  monthlyIncome = 0,
+  minimumReserve = 0,
+  maximumAllocation = 0,
+} = {}) {
+  const toMinor = (value) => Math.round(Math.max(0, Number(value) || 0) * 100);
+  const now = new Date().toISOString();
+  return {
+    schemaVersion: 2,
+    id: `workspace-${crypto.randomUUID().slice(0, 8)}`,
+    name: String(name || "My workspace").trim().slice(0, 60) || "My workspace",
+    isDemo: false,
+    createdAt: now,
+    workspaceType,
+    currency,
+    checkingMinor: toMinor(checking),
+    monthlyIncomeMinor: toMinor(monthlyIncome),
+    boundaries: {
+      minimumReserveMinor: toMinor(minimumReserve),
+      maximumAllocationMinor: toMinor(maximumAllocation),
+    },
+    goals: [],
+    commitments: [],
+    transactions: [],
+    stateVersion: 1,
+    stagedPlan: null,
+    receipts: [],
+    activity: [
+      {
+        id: crypto.randomUUID(),
+        at: now,
+        type: "human",
+        message: "Workspace created",
+      },
+    ],
+  };
 }
