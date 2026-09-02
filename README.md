@@ -131,3 +131,4 @@ CSV imports add context to the transaction history. They do not recalculate the 
 ## License
 
 MIT
+# cashlatch-webmcp
