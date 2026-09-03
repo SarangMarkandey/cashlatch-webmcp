@@ -27,6 +27,7 @@ let activeModal = null;
 let workspaceDraft = null;
 let boundaryDraft = null;
 let toast = null;
+let showWorkspaceHome = !state;
 let webmcpStatus = {
   connected: false,
   message: "Checking site tools…",
@@ -83,6 +84,7 @@ function activateWorkspace(workspaceId) {
   if (permit) revokePermit("workspace changed", { renderNow: false });
   state = structuredClone(workspaces.find((item) => item.id === workspaceId) || null);
   boundaryDraft = null;
+  showWorkspaceHome = false;
   localStorage.setItem(ACTIVE_WORKSPACE_KEY, workspaceId || "");
   render();
 }
@@ -94,6 +96,24 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function renderBrand() {
+  return `
+    <a class="brand" href="/" aria-label="CashLatch home">
+      <img class="brand-logo" src="/assets/cashlatch-logo.png" alt="" />
+      <span>CashLatch<small>Plans change. Your control doesn’t.</small></span>
+    </a>
+  `;
+}
+
+function fieldTitle(label, help) {
+  return `
+    <span class="field-title">
+      <span>${escapeHtml(label)}</span>
+      <span class="help-tip" tabindex="0" aria-label="${escapeHtml(`${label}: ${help}`)}">i<span role="tooltip">${escapeHtml(help)}</span></span>
+    </span>
+  `;
 }
 
 function money(value, compact = false) {
@@ -303,7 +323,7 @@ function proposeWorkspace(input, source = "human") {
   return {
     draftId: workspaceDraft.id,
     status: "awaiting_human_confirmation",
-    message: "Workspace draft is visible in CashLatch. The human must review and select Create workspace.",
+    message: "Workspace draft is visible in CashLatch. The human must review it and select Open workspace.",
   };
 }
 
@@ -319,6 +339,7 @@ function confirmWorkspaceDraft() {
   );
   workspaces.push(structuredClone(created));
   state = created;
+  showWorkspaceHome = false;
   workspaceDraft = null;
   persist();
   render();
@@ -451,9 +472,11 @@ function progressPercent(goal) {
 
 function renderForecastChart(forecast) {
   const width = 760;
-  const height = 220;
-  const padX = 36;
-  const padY = 28;
+  const height = 238;
+  const padX = 42;
+  const padTop = 28;
+  const padBottom = 42;
+  const plotBottom = height - padBottom;
   const allValues = [
     ...forecast.points.map((point) => point.balanceMinor),
     forecast.reserveMinor,
@@ -462,9 +485,10 @@ function renderForecastChart(forecast) {
   const min = Math.min(...allValues, 0);
   const range = Math.max(1, max - min);
   const x = (day) => padX + (day / forecast.horizonDays) * (width - padX * 2);
-  const y = (balance) => padY + ((max - balance) / range) * (height - padY * 2);
+  const y = (balance) => padTop + ((max - balance) / range) * (plotBottom - padTop);
   const points = forecast.points.map((point) => `${x(point.day)},${y(point.balanceMinor)}`).join(" ");
   const reserveY = y(forecast.reserveMinor);
+  const axisDays = [0, 30, 60, 90].filter((day) => day <= forecast.horizonDays);
 
   return `
     <svg class="forecast-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Projected cash balance over ${forecast.horizonDays} days">
@@ -476,11 +500,15 @@ function renderForecastChart(forecast) {
       </defs>
       <line x1="${padX}" y1="${reserveY}" x2="${width - padX}" y2="${reserveY}" class="reserve-line" />
       <text x="${width - padX}" y="${reserveY - 8}" text-anchor="end" class="chart-label reserve-label">Reserve ${escapeHtml(money(forecast.reserveMinor, true))}</text>
-      <polygon points="${points} ${x(forecast.horizonDays)},${height - padY} ${padX},${height - padY}" fill="url(#cashArea)" />
+      <line x1="${padX}" y1="${plotBottom}" x2="${width - padX}" y2="${plotBottom}" class="axis-line" />
+      <polygon points="${points} ${x(forecast.horizonDays)},${plotBottom} ${padX},${plotBottom}" fill="url(#cashArea)" />
       <polyline points="${points}" class="cash-line" />
       ${forecast.points.map((point) => `
         <circle cx="${x(point.day)}" cy="${y(point.balanceMinor)}" r="5" class="cash-point" />
-        <text x="${x(point.day)}" y="${height - 8}" text-anchor="middle" class="chart-label">${point.day}d</text>
+      `).join("")}
+      ${axisDays.map((day) => `
+        <line x1="${x(day)}" y1="${plotBottom}" x2="${x(day)}" y2="${plotBottom + 6}" class="axis-tick" />
+        <text x="${x(day)}" y="${height - 12}" text-anchor="middle" class="chart-label">${day} days</text>
       `).join("")}
     </svg>
   `;
@@ -621,7 +649,7 @@ function renderWorkspaceDraftReview() {
         <span><small>Plan limit</small><b>${draftMoney(workspaceDraft.maximumAllocation)}</b></span>
       </div>
       <div class="review-actions">
-        <button class="primary-button" data-action="confirm-workspace">Create workspace</button>
+        <button class="primary-button" data-action="confirm-workspace">Open workspace</button>
         <button class="ghost-button" data-action="edit-workspace-draft">Edit details</button>
         <button class="ghost-button" data-action="cancel-workspace-draft">Cancel</button>
       </div>
@@ -633,8 +661,7 @@ function renderWelcome() {
   return `
     <div class="welcome-shell">
       <header class="welcome-header">
-        <a class="brand" href="/" aria-label="CashLatch home"><span class="brand-mark">C</span><span>CashLatch<small>Plan money with clear limits</small></span></a>
-        <span class="connection-badge ${webmcpStatus.connected ? "online" : "offline"}"><i></i>${webmcpStatus.connected ? `${webmcpStatus.toolCount || 11} ChatGPT tools ready` : "Works with or without ChatGPT"}</span>
+        ${renderBrand()}
       </header>
       <main class="welcome-main">
         <section class="welcome-copy">
@@ -660,6 +687,19 @@ function renderWelcome() {
           <small>ChatGPT will prepare a draft here. You review it before the workspace is created.</small>
         </aside>
         ${renderWorkspaceDraftReview()}
+        ${workspaces.length ? `
+          <section class="saved-workspaces" aria-labelledby="saved-workspaces-title">
+            <div class="saved-workspaces-heading"><div><span class="section-kicker">Saved in this browser</span><h2 id="saved-workspaces-title">Your workspaces</h2></div><button class="primary-button" data-action="new-workspace">+ New workspace</button></div>
+            <div class="saved-workspace-grid">
+              ${workspaces.map((workspace) => `
+                <button class="saved-workspace-card" data-action="open-workspace" data-id="${workspace.id}">
+                  <span><b>${escapeHtml(workspace.name)}</b><small>${escapeHtml(workspace.workspaceType)} · ${escapeHtml(workspace.currency)}${workspace.isDemo ? " · Fictional demo" : ""}</small></span>
+                  <strong>Open →</strong>
+                </button>
+              `).join("")}
+            </div>
+          </section>
+        ` : ""}
       </main>
       ${renderNewWorkspaceModal()}
       ${toast ? `<div class="toast ${toast.tone}">${escapeHtml(toast.message)}</div>` : ""}
@@ -680,17 +720,17 @@ function renderNewWorkspaceModal() {
         <p class="modal-intro">Start with the numbers that affect your next decision. You can add goals and bills afterward.</p>
         <form id="new-workspace-form">
           <div class="form-grid">
-            <label>Workspace name<input name="name" value="${escapeHtml(draft.name || "Personal finances")}" maxlength="60" required /></label>
-            <label>Workspace type<select name="workspaceType">
+            <label>${fieldTitle("Workspace name", "A private label to help you distinguish this set of finances from your other workspaces.")}<input name="name" placeholder="For example, Personal finances" value="${escapeHtml(draft.name || "Personal finances")}" maxlength="60" required /></label>
+            <label>${fieldTitle("Workspace type", "Choose the closest use. It labels the workspace and does not change your permissions.")}<select name="workspaceType">
               ${["personal", "household", "independent", "business"].map((type) => `<option value="${type}" ${draft.workspaceType === type ? "selected" : ""}>${type}</option>`).join("")}
             </select></label>
-            <label>Currency<select name="currency">
+            <label>${fieldTitle("Currency", "Controls how money is displayed. CashLatch does not perform currency conversion.")}<select name="currency">
               ${["INR", "USD", "EUR", "GBP", "CAD", "AUD", "JPY"].map((currency) => `<option value="${currency}" ${(draft.currency || "INR") === currency ? "selected" : ""}>${currency}</option>`).join("")}
             </select></label>
-            <label>Current available balance<input name="checking" type="number" min="0" step="0.01" value="${draft.checking ?? ""}" required /></label>
-            <label>Expected monthly income<input name="monthlyIncome" type="number" min="0" step="0.01" value="${draft.monthlyIncome ?? ""}" required /></label>
-            <label>Protected minimum balance<input name="minimumReserve" type="number" min="0" step="0.01" value="${draft.minimumReserve ?? ""}" required /><small>CashLatch will not approve a plan projected to cross this.</small></label>
-            <label>Maximum amount per plan<input name="maximumAllocation" type="number" min="0" step="0.01" value="${draft.maximumAllocation ?? ""}" required /></label>
+            <label>${fieldTitle("Current available balance", "The amount currently available in the account you want CashLatch to plan from.")}<input name="checking" type="number" min="0" step="0.01" placeholder="0.00" value="${draft.checking ?? ""}" required /></label>
+            <label>${fieldTitle("Expected monthly income", "Your normal monthly inflow. CashLatch uses it only for projections.")}<input name="monthlyIncome" type="number" min="0" step="0.01" placeholder="0.00" value="${draft.monthlyIncome ?? ""}" required /></label>
+            <label>${fieldTitle("Protected minimum balance", "The lowest balance you want forecasts and plans to preserve.")}<input name="minimumReserve" type="number" min="0" step="0.01" placeholder="0.00" value="${draft.minimumReserve ?? ""}" required /><small>CashLatch will not approve a plan projected to cross this.</small></label>
+            <label>${fieldTitle("Maximum amount per plan", "A hard cap on the total amount any single plan can allocate.")}<input name="maximumAllocation" type="number" min="0" step="0.01" placeholder="0.00" value="${draft.maximumAllocation ?? ""}" required /></label>
           </div>
           <div class="modal-actions"><button type="button" class="ghost-button" data-action="close-modal">Cancel</button><button class="primary-button" type="submit">Review workspace</button></div>
         </form>
@@ -731,27 +771,27 @@ function renderSettingsModal() {
         </div>
         <form id="settings-form">
           <div class="form-grid">
-            <label>Workspace name<input name="workspaceName" value="${escapeHtml(state.name)}" maxlength="60" required /></label>
-            <label>Workspace type<select name="workspaceType">
+            <label>${fieldTitle("Workspace name", "A private label used to identify this workspace.")}<input name="workspaceName" placeholder="Workspace name" value="${escapeHtml(state.name)}" maxlength="60" required /></label>
+            <label>${fieldTitle("Workspace type", "Describes whether these finances are personal, shared, freelance, or business-related.")}<select name="workspaceType">
               ${["personal", "household", "independent", "business"].map((type) => `<option value="${type}" ${state.workspaceType === type ? "selected" : ""}>${type}</option>`).join("")}
             </select></label>
-            <label>Workspace currency<select name="currency">
+            <label>${fieldTitle("Workspace currency", "Changes number formatting only; existing values are not converted.")}<select name="currency">
               ${["INR", "USD", "EUR", "GBP", "CAD", "AUD", "JPY"].map((currency) => `<option value="${currency}" ${state.currency === currency ? "selected" : ""}>${currency}</option>`).join("")}
             </select></label>
-            <label>Checking balance<input name="checking" type="number" step="0.01" value="${fromMinorUnits(state.checkingMinor)}" required /></label>
-            <label>Monthly income<input name="monthlyIncome" type="number" step="0.01" value="${fromMinorUnits(state.monthlyIncomeMinor)}" required /></label>
-            <label>Minimum reserve<input name="minimumReserve" type="number" step="0.01" value="${fromMinorUnits(state.boundaries.minimumReserveMinor)}" required /></label>
-            <label>Maximum allocation<input name="maximumAllocation" type="number" step="0.01" value="${fromMinorUnits(state.boundaries.maximumAllocationMinor)}" required /></label>
+            <label>${fieldTitle("Checking balance", "The current amount available for planning.")}<input name="checking" type="number" min="0" step="0.01" placeholder="0.00" value="${fromMinorUnits(state.checkingMinor)}" required /></label>
+            <label>${fieldTitle("Monthly income", "The recurring monthly income used by the forecast.")}<input name="monthlyIncome" type="number" min="0" step="0.01" placeholder="0.00" value="${fromMinorUnits(state.monthlyIncomeMinor)}" required /></label>
+            <label>${fieldTitle("Minimum reserve", "Plans are blocked when their forecast would cross this protected amount.")}<input name="minimumReserve" type="number" min="0" step="0.01" placeholder="0.00" value="${fromMinorUnits(state.boundaries.minimumReserveMinor)}" required /></label>
+            <label>${fieldTitle("Maximum allocation", "The maximum combined amount CashLatch will allow in one plan.")}<input name="maximumAllocation" type="number" min="0" step="0.01" placeholder="0.00" value="${fromMinorUnits(state.boundaries.maximumAllocationMinor)}" required /></label>
           </div>
           <div class="form-section-heading"><h3 class="form-section-title">Goals</h3><button type="button" class="ghost-button small-button" data-action="add-goal">+ Add goal</button></div>
           <div class="editable-list">
             ${state.goals.map((goal) => `
               <div class="editable-row goal-edit-row">
-                <input name="goalName-${goal.id}" value="${escapeHtml(goal.name)}" aria-label="Goal name" />
-                <input name="goalCurrent-${goal.id}" type="number" value="${fromMinorUnits(goal.currentMinor)}" aria-label="Current amount" />
-                <input name="goalTarget-${goal.id}" type="number" value="${fromMinorUnits(goal.targetMinor)}" aria-label="Target amount" />
-                <input name="goalDate-${goal.id}" type="date" value="${goal.targetDate}" aria-label="Target date" />
-                <select name="goalPriority-${goal.id}" aria-label="Priority">${["essential", "important", "flexible"].map((priority) => `<option value="${priority}" ${goal.priority === priority ? "selected" : ""}>${priority}</option>`).join("")}</select>
+                <label class="compact-field wide-field"><span>Goal name</span><input name="goalName-${goal.id}" placeholder="For example, Emergency fund" value="${escapeHtml(goal.name)}" /></label>
+                <label class="compact-field"><span>Saved so far</span><input name="goalCurrent-${goal.id}" type="number" min="0" step="0.01" placeholder="0.00" value="${fromMinorUnits(goal.currentMinor)}" /></label>
+                <label class="compact-field"><span>Target amount</span><input name="goalTarget-${goal.id}" type="number" min="0.01" step="0.01" placeholder="0.00" value="${fromMinorUnits(goal.targetMinor)}" /></label>
+                <label class="compact-field"><span>Target date</span><input name="goalDate-${goal.id}" type="date" value="${goal.targetDate}" /></label>
+                <label class="compact-field"><span>Priority</span><select name="goalPriority-${goal.id}">${["essential", "important", "flexible"].map((priority) => `<option value="${priority}" ${goal.priority === priority ? "selected" : ""}>${priority}</option>`).join("")}</select></label>
                 <button type="button" class="remove-button" data-action="remove-goal" data-id="${goal.id}" aria-label="Remove ${escapeHtml(goal.name)}">×</button>
               </div>
             `).join("") || `<p class="empty-list-note">No goals yet. Add one here or ask ChatGPT.</p>`}
@@ -760,9 +800,9 @@ function renderSettingsModal() {
           <div class="editable-list">
             ${state.commitments.map((item) => `
               <div class="editable-row commitment-row">
-                <input name="commitmentName-${item.id}" value="${escapeHtml(item.name)}" aria-label="Commitment name" />
-                <input name="commitmentAmount-${item.id}" type="number" value="${fromMinorUnits(item.amountMinor)}" aria-label="Amount" />
-                <input name="commitmentDay-${item.id}" type="number" min="1" max="31" value="${item.dueDay}" aria-label="Due day" />
+                <label class="compact-field wide-field"><span>Commitment name</span><input name="commitmentName-${item.id}" placeholder="For example, Rent" value="${escapeHtml(item.name)}" /></label>
+                <label class="compact-field"><span>Monthly amount</span><input name="commitmentAmount-${item.id}" type="number" min="0.01" step="0.01" placeholder="0.00" value="${fromMinorUnits(item.amountMinor)}" /></label>
+                <label class="compact-field"><span>Due day</span><input name="commitmentDay-${item.id}" type="number" min="1" max="31" placeholder="1–31" value="${item.dueDay}" /></label>
                 <button type="button" class="remove-button" data-action="remove-commitment" data-id="${item.id}" aria-label="Remove ${escapeHtml(item.name)}">×</button>
               </div>
             `).join("") || `<p class="empty-list-note">No monthly commitments yet.</p>`}
@@ -792,7 +832,7 @@ function renderCsvModal() {
 }
 
 function render() {
-  if (!state) {
+  if (!state || showWorkspaceHome) {
     app.innerHTML = renderWelcome();
     bindEvents();
     return;
@@ -807,13 +847,13 @@ function render() {
   app.innerHTML = `
     <div class="app-shell">
       <header class="topbar">
-        <a class="brand" href="/" aria-label="CashLatch home"><span class="brand-mark">C</span><span>CashLatch<small>Plan money with clear limits</small></span></a>
+        <div class="topbar-brand-group">${renderBrand()}<button class="back-to-workspaces" data-action="back-to-workspaces">← Workspaces</button></div>
         <div class="workspace-switcher">
           <label for="workspace-select">Workspace</label>
           <select id="workspace-select">
             ${workspaces.map((workspace) => `<option value="${workspace.id}" ${workspace.id === state.id ? "selected" : ""}>${escapeHtml(workspace.name)}${workspace.isDemo ? " · Demo" : ""}</option>`).join("")}
           </select>
-          <button class="icon-button add-workspace-button" data-action="new-workspace" aria-label="Create another workspace">+</button>
+          <button class="add-workspace-button" data-action="new-workspace">+ New workspace</button>
         </div>
         <div class="topbar-actions">
           <button class="ghost-button" data-action="import-csv">Import CSV</button>
@@ -912,6 +952,7 @@ function render() {
         </div>
       </main>
     </div>
+    ${renderNewWorkspaceModal()}
     ${renderSettingsModal()}
     ${renderCsvModal()}
     ${toast ? `<div class="toast ${toast.tone}">${escapeHtml(toast.message)}</div>` : ""}
@@ -928,6 +969,16 @@ function bindEvents() {
       if (action === "new-workspace") {
         workspaceDraft = null;
         activeModal = "new-workspace";
+      }
+      if (action === "back-to-workspaces") {
+        activeModal = null;
+        showWorkspaceHome = true;
+        render();
+        return;
+      }
+      if (action === "open-workspace") {
+        activateWorkspace(element.dataset.id);
+        return;
       }
       if (action === "settings") activeModal = "settings";
       if (action === "import-csv") activeModal = "csv";
@@ -972,6 +1023,7 @@ function bindEvents() {
         demo.name = existingDemoCount ? `Fictional demo ${existingDemoCount + 1}` : "Fictional demo";
         workspaces.push(structuredClone(demo));
         state = demo;
+        showWorkspaceHome = false;
         persist();
         activeModal = null;
         showToast("Fictional demo opened in a separate workspace");
@@ -1044,6 +1096,7 @@ function bindEvents() {
           const deletedId = state.id;
           workspaces = workspaces.filter((workspace) => workspace.id !== deletedId);
           state = structuredClone(workspaces[0] || null);
+          showWorkspaceHome = !state;
           activeModal = null;
           localStorage.setItem(ACTIVE_WORKSPACE_KEY, state?.id || "");
           persist();

@@ -1,6 +1,6 @@
 # CashLatch
 
-**Financial plans that expire when reality changes.**
+**Plans change. Your control doesn’t.**
 
 CashLatch is a browser-local financial planning workspace built for the OpenAI WebMCP Challenge. A person can create separate workspaces, choose a currency, record balances, bills and goals, and then ask ChatGPT to organize the information or compare possible allocations.
 
@@ -19,7 +19,7 @@ With the page open in ChatGPT's browser, a person can also say:
 
 > Create a Personal workspace in INR. My balance is ₹76,000, income is ₹80,000, I want to protect ₹25,000, and no plan should allocate more than ₹15,000.
 
-ChatGPT prepares a draft on the CashLatch page. The person reviews it and selects **Create workspace**. Goals and commitments can then be added manually or through chat.
+ChatGPT prepares a draft on the CashLatch page. The person reviews it and selects **Open workspace**. Goals and commitments can then be added manually or through chat.
 
 ## Human and agent responsibilities
 
