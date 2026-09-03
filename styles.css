@@ -403,6 +403,7 @@ main {
 }
 
 .forecast-panel,
+.commitments-panel,
 .plan-panel,
 .transaction-panel,
 .access-panel,
@@ -446,6 +447,108 @@ main {
 .forecast-summary strong {
   color: var(--green);
   font-size: 20px;
+}
+
+.forecast-summary small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.forecast-description {
+  max-width: 520px;
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.commitments-heading {
+  align-items: center;
+}
+
+.commitments-heading p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.commitment-dashboard-list {
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.commitment-dashboard-row,
+.commitment-dashboard-total {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.commitment-dashboard-row > span {
+  min-width: 0;
+}
+
+.commitment-dashboard-row b,
+.commitment-dashboard-row small {
+  display: block;
+}
+
+.commitment-dashboard-row b {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.commitment-dashboard-row small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.commitment-dashboard-row strong,
+.commitment-dashboard-total strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.commitment-dashboard-total {
+  border-bottom: 0;
+  background: rgba(110, 231, 183, 0.055);
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.commitment-dashboard-total strong {
+  color: var(--green-bright);
+  font-size: 14px;
+}
+
+.commitment-empty {
+  margin-top: 18px;
+  padding: 20px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 12px;
+  display: grid;
+  gap: 5px;
+  text-align: center;
+}
+
+.commitment-empty b {
+  font-size: 13px;
+}
+
+.commitment-empty span {
+  color: var(--muted);
+  font-size: 10px;
 }
 
 .forecast-svg {
@@ -1346,6 +1449,15 @@ main {
 
   .forecast-summary {
     text-align: left;
+  }
+
+  .commitments-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .commitments-heading .ghost-button {
+    width: 100%;
   }
 
   .editable-row,

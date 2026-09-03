@@ -7,7 +7,7 @@ const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 
 test("uses the new CashLatch brand without the old onboarding badge", () => {
-  assert.match(appSource, /Plans change\. Your control doesn’t\./);
+  assert.match(appSource, /Plan your money\. Protect what matters\./);
   assert.match(appSource, /assets\/cashlatch-logo\.png/);
   assert.match(html, /assets\/cashlatch-logo\.png/);
   assert.doesNotMatch(appSource, /Works with or without ChatGPT/);
@@ -16,7 +16,7 @@ test("uses the new CashLatch brand without the old onboarding badge", () => {
 test("keeps workspace creation reachable from both home and dashboard", () => {
   assert.match(appSource, /data-action="back-to-workspaces"/);
   assert.match(appSource, /data-action="new-workspace"/);
-  assert.match(appSource, />New workspace</);
+  assert.match(appSource, />New money workspace</);
   assert.match(appSource, /data-action="open-workspace"/);
   assert.ok(appSource.split("${renderNewWorkspaceModal()}").length >= 3);
 });
@@ -28,7 +28,7 @@ test("provides labelled responsive goal and commitment fields", () => {
     "Target amount",
     "Target date",
     "Priority",
-    "Commitment name",
+    "Bill name",
     "Monthly amount",
     "Due day",
   ]) {
@@ -51,6 +51,28 @@ test("provides compact navigation, custom workspace types, and chart details", (
   assert.match(appSource, /value="custom"/);
   assert.match(appSource, /workspaceTypeCustom/);
   assert.match(appSource, /class="forecast-tooltip"/);
-  assert.match(appSource, /above reserve/);
+  assert.match(appSource, /above your minimum/);
   assert.match(styles, /\.forecast-point:hover \.forecast-tooltip/);
+});
+
+test("explains bills, balances, forecasts, and safety limits in plain language", () => {
+  for (const copy of [
+    "Upcoming monthly bills",
+    "Total for the next 30 days",
+    "Current balance",
+    "Available for goals",
+    "Money kept aside",
+    "How your balance may change",
+    "Lowest expected balance",
+    "Minimum balance to keep",
+    "Safety limits",
+  ]) {
+    assert.match(appSource, new RegExp(copy));
+  }
+  assert.doesNotMatch(appSource, /Checking available/);
+  assert.doesNotMatch(appSource, /Workspace freshness/);
+  assert.doesNotMatch(appSource, /Deterministic rules/);
+  assert.doesNotMatch(appSource, /Approve this plan/);
+  assert.doesNotMatch(appSource, /Activity trail/);
+  assert.doesNotMatch(appSource, /Suggested agent prompt/);
 });

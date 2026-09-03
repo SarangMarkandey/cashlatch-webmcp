@@ -19,7 +19,11 @@ function publicGoal(goal, currency) {
     target: fromMinorUnits(goal.targetMinor),
     remaining: fromMinorUnits(Math.max(0, goal.targetMinor - goal.currentMinor)),
     targetDate: goal.targetDate,
-    priority: goal.priority,
+    priority: {
+      essential: "must_fund",
+      important: "important",
+      flexible: "nice_to_have",
+    }[goal.priority] || goal.priority,
     progressPercent: Math.min(100, Math.round((goal.currentMinor / goal.targetMinor) * 100)),
     display: `${formatMoney(goal.currentMinor, currency)} of ${formatMoney(goal.targetMinor, currency)}`,
   };
@@ -27,21 +31,31 @@ function publicGoal(goal, currency) {
 
 function publicSimulation(result, state) {
   return {
-    allocations: result.allocations.map((allocation) => ({
+    goalFunding: result.allocations.map((allocation) => ({
       goalId: allocation.goalId,
       amount: fromMinorUnits(allocation.amountMinor),
       goalName: state.goals.find((goal) => goal.id === allocation.goalId)?.name,
     })),
-    totalAllocation: fromMinorUnits(result.totalAllocationMinor),
-    checkingAfter: fromMinorUnits(result.checkingAfterMinor),
-    lowestProjectedBalance: fromMinorUnits(result.lowestProjectedMinor),
-    upcomingCommitments: fromMinorUnits(result.upcomingCommitmentsMinor),
-    withinConfiguredBoundaries: result.withinBoundaries,
-    violations: result.violations,
+    totalGoingToGoals: fromMinorUnits(result.totalAllocationMinor),
+    balanceAfterFundingGoals: fromMinorUnits(result.checkingAfterMinor),
+    lowestExpectedBalance: fromMinorUnits(result.lowestProjectedMinor),
+    monthlyBills: fromMinorUnits(result.upcomingCommitmentsMinor),
+    passesSafetyChecks: result.withinBoundaries,
+    problems: result.violations.map((item) => item.message),
     summary: result.withinBoundaries
-      ? `This allocation is within the configured boundaries. The lowest projected balance is ${formatMoney(result.lowestProjectedMinor, state.currency)}.`
-      : `This allocation is blocked by ${result.violations.length} configured boundary check(s).`,
+      ? `This option passes the user's safety limits. The lowest expected balance is ${formatMoney(result.lowestProjectedMinor, state.currency)}.`
+      : `This option does not pass ${result.violations.length} of the user's safety checks.`,
   };
+}
+
+function publicRecommendationStatus(status) {
+  return {
+    staged: "needs_review",
+    blocked: "blocked",
+    authorized: "approved",
+    stale: "needs_update",
+    committed: "applied",
+  }[status] || status;
 }
 
 export function createWebMCPBridge({
@@ -63,7 +77,7 @@ export function createWebMCPBridge({
   const available = () => typeof modelContext()?.registerTool === "function";
   const currentState = () => {
     const state = getState();
-    if (!state) throw new Error("No CashLatch workspace is active. Create a workspace draft first.");
+    if (!state) throw new Error("No CashLatch money workspace is open. Prepare one for the user to review first.");
     return state;
   };
 
@@ -73,7 +87,7 @@ export function createWebMCPBridge({
 
   async function registerStaticTools() {
     if (!available()) {
-      onStatus({ connected: false, message: "Open this page in a WebMCP-enabled browser." });
+      onStatus({ connected: false, message: "Open this page beside ChatGPT in a supported browser to use chat assistance." });
       return false;
     }
 
@@ -83,8 +97,8 @@ export function createWebMCPBridge({
 
     const tools = [
       {
-        name: "get_financial_context",
-        description: "Read the current CashLatch accounts, goals, commitments, user boundaries, staged plan, and financial state version.",
+        name: "get_money_workspace",
+        description: "Read the open CashLatch money workspace: current balance, expected income, monthly bills, savings goals, safety limits, and any recommendation awaiting review.",
         inputSchema: { type: "object", properties: {}, additionalProperties: false },
         annotations: { readOnlyHint: true, untrustedContentHint: false },
         execute: async () => {
@@ -92,7 +106,7 @@ export function createWebMCPBridge({
           if (!state) {
             return toolResult({
               hasActiveWorkspace: false,
-              message: "No workspace is active. Ask the user for their basics, then use create_workspace_draft for review.",
+              message: "No money workspace is open. Ask the user for the basic details, then use prepare_money_workspace so they can review it.",
             });
           }
           return toolResult({
@@ -102,27 +116,26 @@ export function createWebMCPBridge({
             isFictionalDemo: Boolean(state.isDemo),
             workspaceType: state.workspaceType,
             currency: state.currency,
-            checking: fromMinorUnits(state.checkingMinor),
-            monthlyIncome: fromMinorUnits(state.monthlyIncomeMinor),
-            boundaries: {
-              minimumReserve: fromMinorUnits(state.boundaries.minimumReserveMinor),
-              maximumAllocation: fromMinorUnits(state.boundaries.maximumAllocationMinor),
+            currentBalance: fromMinorUnits(state.checkingMinor),
+            expectedMonthlyIncome: fromMinorUnits(state.monthlyIncomeMinor),
+            safetyLimits: {
+              minimumBalanceToKeep: fromMinorUnits(state.boundaries.minimumReserveMinor),
+              maximumPerRecommendation: fromMinorUnits(state.boundaries.maximumAllocationMinor),
             },
-            recurringCommitments: state.commitments.map((item) => ({
+            monthlyBills: state.commitments.map((item) => ({
               id: item.id,
               name: item.name,
               amount: fromMinorUnits(item.amountMinor),
               dueDay: item.dueDay,
             })),
             goals: state.goals.map((goal) => publicGoal(goal, state.currency)),
-            stagedPlan: state.stagedPlan
+            recommendation: state.stagedPlan
               ? {
                   id: state.stagedPlan.id,
-                  status: state.stagedPlan.status,
-                  totalAllocation: fromMinorUnits(state.stagedPlan.totalAllocationMinor),
+                  status: publicRecommendationStatus(state.stagedPlan.status),
+                  totalGoingToGoals: fromMinorUnits(state.stagedPlan.totalAllocationMinor),
                 }
               : null,
-            stateVersion: state.stateVersion,
           });
         },
       },
@@ -155,8 +168,8 @@ export function createWebMCPBridge({
         },
       },
       {
-        name: "create_workspace_draft",
-        description: "Prepare a new CashLatch workspace from details the user supplied. This only creates a visible draft; the human must confirm it on the webpage before it becomes active.",
+        name: "prepare_money_workspace",
+        description: "Prepare a new CashLatch money workspace from details the user supplied. Show the details on the page so the user can review and confirm them; do not save it automatically.",
         inputSchema: {
           type: "object",
           properties: {
@@ -168,20 +181,26 @@ export function createWebMCPBridge({
               description: "Workspace category, such as personal, household, independent, business, education, wedding, or another user-supplied label.",
             },
             currency: { type: "string", enum: ["INR", "USD", "EUR", "GBP", "CAD", "AUD", "JPY"] },
-            checking: { type: "number", minimum: 0 },
-            monthlyIncome: { type: "number", minimum: 0 },
-            minimumReserve: { type: "number", minimum: 0 },
-            maximumAllocation: { type: "number", minimum: 0 },
+            currentBalance: { type: "number", minimum: 0 },
+            expectedMonthlyIncome: { type: "number", minimum: 0 },
+            minimumBalanceToKeep: { type: "number", minimum: 0 },
+            maximumPerRecommendation: { type: "number", minimum: 0 },
           },
-          required: ["name", "workspaceType", "currency", "checking", "monthlyIncome", "minimumReserve", "maximumAllocation"],
+          required: ["name", "workspaceType", "currency", "currentBalance", "expectedMonthlyIncome", "minimumBalanceToKeep", "maximumPerRecommendation"],
           additionalProperties: false,
         },
         annotations: { readOnlyHint: false, untrustedContentHint: false },
-        execute: async (input) => toolResult(proposeWorkspace(input, "agent")),
+        execute: async (input) => toolResult(proposeWorkspace({
+          ...input,
+          checking: input.currentBalance,
+          monthlyIncome: input.expectedMonthlyIncome,
+          minimumReserve: input.minimumBalanceToKeep,
+          maximumAllocation: input.maximumPerRecommendation,
+        }, "agent")),
       },
       {
         name: "add_or_update_goal",
-        description: "Add a goal to the active CashLatch workspace or update one by ID. This changes visible planning data but cannot change safety boundaries or authorize a plan.",
+        description: "Add a savings goal to the open CashLatch money workspace or update one by ID. This cannot change the user's safety limits or approve a recommendation.",
         inputSchema: {
           type: "object",
           properties: {
@@ -202,12 +221,12 @@ export function createWebMCPBridge({
         },
       },
       {
-        name: "add_or_update_commitment",
-        description: "Add or update a recurring monthly commitment in the active workspace. This changes forecasts and cancels any existing plan authorization.",
+        name: "add_or_update_monthly_bill",
+        description: "Add or update a monthly bill in the open money workspace. This updates the balance estimate and cancels any previous recommendation approval.",
         inputSchema: {
           type: "object",
           properties: {
-            commitmentId: { type: "string", description: "Existing commitment ID to update. Omit to add one." },
+            monthlyBillId: { type: "string", description: "Existing monthly bill ID to update. Omit to add a bill." },
             name: { type: "string", minLength: 1, maxLength: 80 },
             amount: { type: "number", exclusiveMinimum: 0 },
             dueDay: { type: "integer", minimum: 1, maximum: 31 },
@@ -218,12 +237,12 @@ export function createWebMCPBridge({
         annotations: { readOnlyHint: false, untrustedContentHint: false },
         execute: async (input) => {
           currentState();
-          return toolResult(upsertCommitment(input, "agent"));
+          return toolResult(upsertCommitment({ ...input, commitmentId: input.monthlyBillId }, "agent"));
         },
       },
       {
-        name: "record_financial_event",
-        description: "Record income or an expense supplied by the user in the active workspace and update its current balance. Any staged or approved plan becomes stale because financial reality changed.",
+        name: "record_income_or_expense",
+        description: "Record income or an expense supplied by the user and update the current balance. Any previous recommendation then needs to be prepared and approved again.",
         inputSchema: {
           type: "object",
           properties: {
@@ -242,13 +261,13 @@ export function createWebMCPBridge({
         },
       },
       {
-        name: "propose_boundary_change",
-        description: "Propose changes to the protected reserve or maximum allocation. This never applies the change directly; the human must review and accept it on the CashLatch webpage.",
+        name: "propose_safety_limit_change",
+        description: "Propose a new minimum balance to keep or a new maximum per recommendation. Show it on the CashLatch page; only the user can accept the change.",
         inputSchema: {
           type: "object",
           properties: {
-            minimumReserve: { type: "number", minimum: 0 },
-            maximumAllocation: { type: "number", minimum: 0 },
+            minimumBalanceToKeep: { type: "number", minimum: 0 },
+            maximumPerRecommendation: { type: "number", minimum: 0 },
             reason: { type: "string", minLength: 1, maxLength: 240 },
           },
           required: ["reason"],
@@ -257,12 +276,16 @@ export function createWebMCPBridge({
         annotations: { readOnlyHint: false, untrustedContentHint: false },
         execute: async (input) => {
           currentState();
-          return toolResult(proposeBoundaryChange(input, "agent"));
+          return toolResult(proposeBoundaryChange({
+            reason: input.reason,
+            minimumReserve: input.minimumBalanceToKeep,
+            maximumAllocation: input.maximumPerRecommendation,
+          }, "agent"));
         },
       },
       {
-        name: "forecast_cashflow",
-        description: "Calculate a deterministic 30, 60, or 90-day cash forecast using current checking, recurring commitments, income, and reserve.",
+        name: "estimate_balance",
+        description: "Estimate the balance after 30, 60, or 90 days using the current balance, expected monthly income, and monthly bills.",
         inputSchema: {
           type: "object",
           properties: {
@@ -276,26 +299,26 @@ export function createWebMCPBridge({
           const result = forecastCashflow(state, horizonDays);
           return toolResult({
             horizonDays: result.horizonDays,
-            projectedEndBalance: fromMinorUnits(result.projectedEndBalanceMinor),
-            lowestProjectedBalance: fromMinorUnits(result.lowestBalanceMinor),
-            monthlyCommitments: fromMinorUnits(result.monthlyCommitmentsMinor),
-            availableNow: fromMinorUnits(result.availableNowMinor),
-            minimumReserve: fromMinorUnits(result.reserveMinor),
-            crossesReserve: result.crossesReserve,
+            estimatedEndBalance: fromMinorUnits(result.projectedEndBalanceMinor),
+            lowestExpectedBalance: fromMinorUnits(result.lowestBalanceMinor),
+            monthlyBills: fromMinorUnits(result.monthlyCommitmentsMinor),
+            availableForGoalsNow: fromMinorUnits(result.availableNowMinor),
+            minimumBalanceToKeep: fromMinorUnits(result.reserveMinor),
+            goesBelowMinimum: result.crossesReserve,
             currency: state.currency,
           });
         },
       },
       {
-        name: "calculate_goal_plan",
-        description: "Calculate required monthly contributions for selected financial goals and compare them with current monthly capacity.",
+        name: "calculate_goal_funding_needs",
+        description: "Calculate how much the user needs to add to selected savings goals each month and whether their expected income after bills can cover it.",
         inputSchema: {
           type: "object",
           properties: {
             goalIds: {
               type: "array",
               items: { type: "string" },
-              description: "Goal IDs from get_financial_context. Omit to include every goal.",
+              description: "Goal IDs from get_money_workspace. Omit to include every goal.",
             },
           },
           additionalProperties: false,
@@ -313,20 +336,20 @@ export function createWebMCPBridge({
               remainingMinor: undefined,
               requiredMonthlyMinor: undefined,
             })),
-            monthlyCapacity: fromMinorUnits(result.monthlyCapacityMinor),
-            totalRequiredMonthly: fromMinorUnits(result.totalRequiredMonthlyMinor),
-            feasible: result.feasible,
-            monthlyGap: fromMinorUnits(result.monthlyGapMinor),
+            availableEachMonthAfterBills: fromMinorUnits(result.monthlyCapacityMinor),
+            neededEachMonthForGoals: fromMinorUnits(result.totalRequiredMonthlyMinor),
+            affordableWithExpectedIncome: result.feasible,
+            monthlyShortfall: fromMinorUnits(result.monthlyGapMinor),
           });
         },
       },
       {
-        name: "simulate_allocation",
-        description: "Evaluate one exact allocation across CashLatch goals against the maximum allocation, upcoming commitments, and reserve floor.",
+        name: "check_goal_funding_option",
+        description: "Check one possible way to add money to savings goals. Report the balance afterward and whether it protects monthly bills and the minimum balance the user wants to keep.",
         inputSchema: {
           type: "object",
           properties: {
-            allocations: {
+            goalFunding: {
               type: "array",
               minItems: 1,
               items: {
@@ -340,26 +363,26 @@ export function createWebMCPBridge({
               },
             },
           },
-          required: ["allocations"],
+          required: ["goalFunding"],
           additionalProperties: false,
         },
         annotations: { readOnlyHint: true, untrustedContentHint: false },
-        execute: async ({ allocations }) => {
+        execute: async ({ goalFunding }) => {
           const state = currentState();
           const result = simulateAllocation(
             state,
-            allocations.map((item) => ({ goalId: item.goalId, amountMinor: toMinorUnits(item.amount) })),
+            goalFunding.map((item) => ({ goalId: item.goalId, amountMinor: toMinorUnits(item.amount) })),
           );
           return toolResult(publicSimulation(result, state));
         },
       },
       {
-        name: "stage_allocation_plan",
-        description: "Stage one exact goal-allocation plan in CashLatch for human review. This does not commit or authorize the allocation.",
+        name: "prepare_goal_recommendation",
+        description: "Prepare one exact goal-funding recommendation and show it in CashLatch for the user to review. Do not approve or apply it.",
         inputSchema: {
           type: "object",
           properties: {
-            allocations: {
+            goalFunding: {
               type: "array",
               minItems: 1,
               items: {
@@ -373,24 +396,24 @@ export function createWebMCPBridge({
               },
             },
           },
-          required: ["allocations"],
+          required: ["goalFunding"],
           additionalProperties: false,
         },
         annotations: { readOnlyHint: false, untrustedContentHint: false },
-        execute: async ({ allocations }) => {
+        execute: async ({ goalFunding }) => {
           currentState();
           const plan = stagePlan(
-            allocations.map((item) => ({ goalId: item.goalId, amountMinor: toMinorUnits(item.amount) })),
+            goalFunding.map((item) => ({ goalId: item.goalId, amountMinor: toMinorUnits(item.amount) })),
             "agent",
           );
           return toolResult({
-            planId: plan.id,
-            status: plan.status,
-            withinConfiguredBoundaries: plan.withinBoundaries,
-            violations: plan.violations,
+            recommendationId: plan.id,
+            status: publicRecommendationStatus(plan.status),
+            passesSafetyChecks: plan.withinBoundaries,
+            problems: plan.violations.map((item) => item.message),
             message: plan.withinBoundaries
-              ? "Plan staged. The human must review and authorize it in CashLatch before any commit capability exists."
-              : "Plan staged but blocked by configured boundaries. It cannot be authorized.",
+              ? "The recommendation is ready for the user to review in CashLatch. It has not been approved or applied."
+              : "The recommendation is visible in CashLatch, but it does not pass the user's safety limits and cannot be approved.",
           });
         },
       },
@@ -398,11 +421,11 @@ export function createWebMCPBridge({
 
     try {
       for (const tool of tools) await register(tool, options);
-      onStatus({ connected: true, message: `${tools.length} site tools available`, toolCount: tools.length });
+      onStatus({ connected: true, message: "ChatGPT can work with this open money workspace", toolCount: tools.length });
       return true;
     } catch (error) {
       staticController.abort();
-      onStatus({ connected: false, message: `Site tool registration failed: ${error.message}` });
+      onStatus({ connected: false, message: `ChatGPT connection could not start: ${error.message}` });
       return false;
     }
   }
@@ -420,7 +443,7 @@ export function createWebMCPBridge({
       await register(
         {
           name: permit.toolName,
-          description: `Commit the one exact CashLatch plan authorized by the human. Permit ${permit.shortId}; expires ${permit.expiresAt}. Takes no plan inputs and revalidates state before committing.`,
+          description: `Apply only the exact CashLatch recommendation the user approved. Approval ${permit.shortId} expires ${permit.expiresAt}. Takes no replacement amounts, checks the latest information again, and can be used once.`,
           inputSchema: { type: "object", properties: {}, additionalProperties: false },
           annotations: { readOnlyHint: false, untrustedContentHint: false },
           execute: async () => commitPermit(permit.id),

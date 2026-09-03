@@ -34,7 +34,7 @@ let toast = null;
 let showWorkspaceHome = !state;
 let webmcpStatus = {
   connected: false,
-  message: "Checking site tools…",
+  message: "Connecting to ChatGPT…",
   toolCount: 0,
 };
 
@@ -42,7 +42,7 @@ function normalizeStoredWorkspace(parsed) {
   return {
     ...parsed,
     id: parsed.id || `workspace-${crypto.randomUUID().slice(0, 8)}`,
-    name: parsed.name || "My workspace",
+    name: parsed.name || "My money workspace",
     isDemo: Boolean(parsed.isDemo),
     schemaVersion: 2,
     activity: parsed.activity || [],
@@ -85,7 +85,7 @@ function persist() {
 }
 
 function activateWorkspace(workspaceId) {
-  if (permit) revokePermit("workspace changed", { renderNow: false });
+  if (permit) revokePermit("you opened another money workspace", { renderNow: false });
   state = structuredClone(workspaces.find((item) => item.id === workspaceId) || null);
   boundaryDraft = null;
   showWorkspaceHome = false;
@@ -106,7 +106,7 @@ function renderBrand() {
   return `
     <a class="brand" href="/" aria-label="CashLatch home">
       <img class="brand-logo" src="/assets/cashlatch-logo.png" alt="" />
-      <span>CashLatch<small>Plans change. Your control doesn’t.</small></span>
+      <span>CashLatch<small>Plan your money. Protect what matters.</small></span>
     </a>
   `;
 }
@@ -154,7 +154,7 @@ function revokePermit(reason, { markPlanStale = true, renderNow = true } = {}) {
   if (markPlanStale && state.stagedPlan?.status === "authorized") {
     state.stagedPlan = { ...state.stagedPlan, status: "stale" };
   }
-  addActivity(state, `Permit ${shortId} revoked · ${reason}`, "revoked");
+  addActivity(state, `Approval ${shortId} cancelled · ${reason}`, "revoked");
   persist();
   if (renderNow) render();
   return true;
@@ -176,7 +176,7 @@ function mutateFinancialState(mutator, reason) {
   }
   addActivity(next, reason, "change");
   if (previousPermit) {
-    addActivity(next, `Permit ${previousPermit.shortId} revoked · financial state changed`, "revoked");
+    addActivity(next, `Approval ${previousPermit.shortId} cancelled because your financial information changed`, "revoked");
   }
   state = next;
   persist();
@@ -184,12 +184,12 @@ function mutateFinancialState(mutator, reason) {
 }
 
 function stagePlan(allocations, source = "human") {
-  if (permit) revokePermit("a new plan was staged", { markPlanStale: false, renderNow: false });
+  if (permit) revokePermit("a new recommendation was prepared", { markPlanStale: false, renderNow: false });
   const plan = createStagedPlan(state, allocations, source);
   state = { ...state, stagedPlan: plan };
   addActivity(
     state,
-    `${source === "agent" ? "Agent" : "Human"} staged ${money(plan.totalAllocationMinor)} across ${plan.allocations.length} goal${plan.allocations.length === 1 ? "" : "s"}`,
+    `${source === "agent" ? "ChatGPT" : "You"} prepared a ${money(plan.totalAllocationMinor)} recommendation for ${plan.allocations.length} goal${plan.allocations.length === 1 ? "" : "s"}`,
     source === "agent" ? "agent" : "human",
   );
   persist();
@@ -206,7 +206,7 @@ async function authorizeCurrentPlan() {
   const created = {
     id: crypto.randomUUID(),
     shortId,
-    toolName: `commit_plan_${shortId}`,
+    toolName: `apply_approved_recommendation_${shortId}`,
     planId: plan.id,
     stateVersion: state.stateVersion,
     fingerprint,
@@ -219,59 +219,59 @@ async function authorizeCurrentPlan() {
     ...state,
     stagedPlan: { ...plan, status: "authorized", approvedStateVersion: state.stateVersion },
   };
-  addActivity(state, `Human authorized exact plan · permit ${shortId}`, "authorized");
+  addActivity(state, `You approved this exact recommendation · approval ${shortId}`, "authorized");
   persist();
 
   try {
     await bridge.syncPermit(created);
     if (bridge.available()) {
-      addActivity(state, `Execution capability created · ${created.toolName}`, "capability");
+      addActivity(state, "ChatGPT can now apply this recommendation once", "capability");
       persist();
     }
   } catch (error) {
-    revokePermit(`capability registration failed: ${error.message}`, { renderNow: false });
-    showToast("The plan was not authorized because the site tool could not be registered.", "danger");
+    revokePermit(`the one-time ChatGPT action could not be created: ${error.message}`, { renderNow: false });
+    showToast("This recommendation could not be approved because the ChatGPT action was unavailable.", "danger");
     return;
   }
 
   permitTimer = window.setTimeout(() => {
-    revokePermit("permit expired");
+    revokePermit("the one-time approval expired");
   }, PERMIT_TTL_MS);
   render();
 }
 
 async function commitPermit(permitId) {
   if (!permit || permit.id !== permitId) {
-    return { success: false, code: "PERMIT_NOT_ACTIVE", message: "This permit is not active." };
+    return { success: false, code: "PERMIT_NOT_ACTIVE", message: "This one-time approval is no longer available." };
   }
   if (Date.now() >= new Date(permit.expiresAt).getTime()) {
-    revokePermit("permit expired");
-    return { success: false, code: "PERMIT_EXPIRED", message: "The human authorization expired." };
+    revokePermit("the one-time approval expired");
+    return { success: false, code: "PERMIT_EXPIRED", message: "The user's approval expired. Ask them to review the recommendation again." };
   }
 
   const plan = state.stagedPlan;
   if (!plan || plan.id !== permit.planId || plan.status !== "authorized") {
-    revokePermit("the approved plan is no longer active");
-    return { success: false, code: "PLAN_CHANGED", message: "The approved plan is no longer active." };
+    revokePermit("the approved recommendation is no longer active");
+    return { success: false, code: "PLAN_CHANGED", message: "The approved recommendation is no longer active." };
   }
   if (state.stateVersion !== permit.stateVersion) {
-    revokePermit("financial state version changed");
-    return { success: false, code: "STALE_STATE", message: "Financial state changed after approval." };
+    revokePermit("your financial information changed");
+    return { success: false, code: "STALE_STATE", message: "The financial information changed after approval. Prepare an updated recommendation." };
   }
 
   const currentFingerprint = await fingerprintPlan(state, plan);
   if (currentFingerprint !== permit.fingerprint) {
-    revokePermit("state fingerprint changed");
-    return { success: false, code: "FINGERPRINT_MISMATCH", message: "Approved conditions changed." };
+    revokePermit("the information used for approval changed");
+    return { success: false, code: "FINGERPRINT_MISMATCH", message: "The information used for approval has changed." };
   }
 
   const validation = simulateAllocation(state, plan.allocations);
   if (!validation.withinBoundaries) {
-    revokePermit("the plan no longer passes configured boundaries");
+    revokePermit("the recommendation no longer passes your safety limits");
     return {
       success: false,
       code: "BOUNDARY_VIOLATION",
-      message: "The plan no longer passes configured boundaries.",
+      message: "The recommendation no longer passes the user's safety limits.",
       violations: validation.violations,
     };
   }
@@ -294,19 +294,19 @@ async function commitPermit(permitId) {
     },
     ...(state.receipts || []),
   ];
-  addActivity(state, `Plan committed once · ${money(plan.totalAllocationMinor)} · permit consumed`, "committed");
-  addActivity(state, `Execution capability removed · ${consumedPermit.toolName}`, "capability");
+  addActivity(state, `${money(plan.totalAllocationMinor)} added to the approved goal${plan.allocations.length === 1 ? "" : "s"}`, "committed");
+  addActivity(state, "The one-time approval was used and is no longer available", "capability");
   persist();
   render();
 
   return {
     success: true,
-    planId: plan.id,
-    receiptId: `receipt-${consumedPermit.shortId}`,
-    committedTotal: fromMinorUnits(plan.totalAllocationMinor),
-    checkingAfter: fromMinorUnits(state.checkingMinor),
+    recommendationId: plan.id,
+    confirmationId: `receipt-${consumedPermit.shortId}`,
+    amountAddedToGoals: fromMinorUnits(plan.totalAllocationMinor),
+    currentBalance: fromMinorUnits(state.checkingMinor),
     currency: state.currency,
-    message: "The exact human-approved plan was committed once. Its execution capability has been removed.",
+    message: "The exact recommendation approved by the user was applied once. It cannot be applied again.",
   };
 }
 
@@ -327,7 +327,7 @@ function proposeWorkspace(input, source = "human") {
   return {
     draftId: workspaceDraft.id,
     status: "awaiting_human_confirmation",
-    message: "Workspace draft is visible in CashLatch. The human must review it and select Open workspace.",
+    message: "The new money workspace is ready for review in CashLatch. The user must confirm it before it is saved.",
   };
 }
 
@@ -337,8 +337,8 @@ function confirmWorkspaceDraft() {
   addActivity(
     created,
     workspaceDraft.source === "agent"
-      ? "Agent prepared workspace details; human confirmed creation"
-      : "Workspace details confirmed",
+      ? "ChatGPT prepared the details; you confirmed the money workspace"
+      : "You confirmed the money workspace details",
     "human",
   );
   workspaces.push(structuredClone(created));
@@ -353,7 +353,7 @@ function confirmWorkspaceDraft() {
 const GOAL_COLORS = ["#6EE7B7", "#A7C7FF", "#F9C97C", "#D8B4FE", "#FDA4AF"];
 
 function upsertGoal(input, source = "human") {
-  if (!state) throw new Error("Create a workspace first.");
+  if (!state) throw new Error("Create a money workspace first.");
   const existing = input.goalId && state.goals.find((goal) => goal.id === input.goalId);
   const id = existing?.id || `goal-${crypto.randomUUID().slice(0, 8)}`;
   const goal = {
@@ -369,22 +369,22 @@ function upsertGoal(input, source = "human") {
     const index = next.goals.findIndex((item) => item.id === id);
     if (index >= 0) next.goals[index] = goal;
     else next.goals.push(goal);
-  }, `${source === "agent" ? "Agent" : "Human"} ${existing ? "updated" : "added"} goal · ${goal.name}`);
+  }, `${source === "agent" ? "ChatGPT" : "You"} ${existing ? "updated" : "added"} savings goal · ${goal.name}`);
   return {
     success: true,
     goalId: id,
     action: existing ? "updated" : "added",
-    message: `${goal.name} is now visible in the active workspace. Any previous plan approval was cancelled.`,
+    message: `${goal.name} is now visible in the active money workspace. Any previous recommendation approval was cancelled.`,
   };
 }
 
 function upsertCommitment(input, source = "human") {
-  if (!state) throw new Error("Create a workspace first.");
+  if (!state) throw new Error("Create a money workspace first.");
   const existing = input.commitmentId && state.commitments.find((item) => item.id === input.commitmentId);
   const id = existing?.id || `commitment-${crypto.randomUUID().slice(0, 8)}`;
   const commitment = {
     id,
-    name: String(input.name || existing?.name || "Commitment").trim().slice(0, 80),
+    name: String(input.name || existing?.name || "Monthly bill").trim().slice(0, 80),
     amountMinor: Math.max(1, toMinorUnits(input.amount ?? fromMinorUnits(existing?.amountMinor || 1))),
     dueDay: Math.max(1, Math.min(31, Math.round(Number(input.dueDay ?? existing?.dueDay ?? 1)))),
   };
@@ -392,17 +392,17 @@ function upsertCommitment(input, source = "human") {
     const index = next.commitments.findIndex((item) => item.id === id);
     if (index >= 0) next.commitments[index] = commitment;
     else next.commitments.push(commitment);
-  }, `${source === "agent" ? "Agent" : "Human"} ${existing ? "updated" : "added"} commitment · ${commitment.name}`);
+  }, `${source === "agent" ? "ChatGPT" : "You"} ${existing ? "updated" : "added"} monthly bill · ${commitment.name}`);
   return {
     success: true,
     commitmentId: id,
     action: existing ? "updated" : "added",
-    message: `${commitment.name} is now included in CashLatch forecasts. Any previous plan approval was cancelled.`,
+    message: `${commitment.name} is now included in the balance estimate. Any previous recommendation approval was cancelled.`,
   };
 }
 
 function recordFinancialEvent(input, source = "human") {
-  if (!state) throw new Error("Create a workspace first.");
+  if (!state) throw new Error("Create a money workspace first.");
   const previousPlanStatus = state.stagedPlan?.status || null;
   const authorizationCancelled = Boolean(permit || previousPlanStatus === "authorized");
   const planInvalidated = ["staged", "authorized"].includes(previousPlanStatus);
@@ -419,24 +419,24 @@ function recordFinancialEvent(input, source = "human") {
       amountMinor: signedAmount,
       kind: input.kind,
     });
-  }, `${source === "agent" ? "Agent recorded" : "Recorded"} ${input.kind} · ${description}`);
+  }, `${source === "agent" ? "ChatGPT recorded" : "You recorded"} ${input.kind} · ${description}`);
   return {
     success: true,
     transactionId,
     currentBalance: fromMinorUnits(state.checkingMinor),
     currency: state.currency,
-    planInvalidated,
-    authorizationCancelled,
+    previousRecommendationNeedsUpdate: planInvalidated,
+    previousApprovalCancelled: authorizationCancelled,
     message: authorizationCancelled
-      ? "The financial event was recorded and the active plan authorization was cancelled."
+      ? "The income or expense was recorded. The previous recommendation approval was cancelled because your balance changed."
       : planInvalidated
-        ? "The financial event was recorded and the staged plan became stale. No plan had been authorized."
-        : "The financial event was recorded. There was no active plan to invalidate.",
+        ? "The income or expense was recorded. The previous recommendation now needs to be updated."
+        : "The income or expense was recorded.",
   };
 }
 
 function proposeBoundaryChange(input, source = "agent") {
-  if (!state) throw new Error("Create a workspace first.");
+  if (!state) throw new Error("Create a money workspace first.");
   boundaryDraft = {
     minimumReserveMinor: input.minimumReserve === undefined
       ? state.boundaries.minimumReserveMinor
@@ -450,7 +450,7 @@ function proposeBoundaryChange(input, source = "agent") {
   render();
   return {
     status: "awaiting_human_confirmation",
-    message: "The proposed safety-limit change is visible in CashLatch. It has not been applied.",
+    message: "The proposed safety-limit change is ready for the user to review in CashLatch. It has not been accepted.",
   };
 }
 
@@ -483,6 +483,14 @@ function progressPercent(goal) {
   return Math.min(100, Math.round((goal.currentMinor / goal.targetMinor) * 100));
 }
 
+function priorityLabel(priority) {
+  return {
+    essential: "Must fund",
+    important: "Important",
+    flexible: "Nice to have",
+  }[priority] || priority;
+}
+
 function renderForecastChart(forecast) {
   const width = 760;
   const height = 238;
@@ -502,11 +510,11 @@ function renderForecastChart(forecast) {
   const points = forecast.points.map((point) => `${x(point.day)},${y(point.balanceMinor)}`).join(" ");
   const reserveY = y(forecast.reserveMinor);
   const axisDays = [0, 30, 60, 90].filter((day) => day <= forecast.horizonDays);
-  const tooltipWidth = 174;
-  const tooltipHeight = 62;
+  const tooltipWidth = 218;
+  const tooltipHeight = 66;
 
   return `
-    <svg class="forecast-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Projected cash balance over ${forecast.horizonDays} days">
+    <svg class="forecast-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Estimated balance over the next ${forecast.horizonDays} days">
       <defs>
         <linearGradient id="cashArea" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stop-color="#6ee7b7" stop-opacity=".32" />
@@ -514,7 +522,7 @@ function renderForecastChart(forecast) {
         </linearGradient>
       </defs>
       <line x1="${padX}" y1="${reserveY}" x2="${width - padX}" y2="${reserveY}" class="reserve-line" />
-      <text x="${width - padX}" y="${reserveY - 8}" text-anchor="end" class="chart-label reserve-label">Reserve ${escapeHtml(money(forecast.reserveMinor, true))}</text>
+      <text x="${width - padX}" y="${reserveY - 8}" text-anchor="end" class="chart-label reserve-label">Minimum to keep ${escapeHtml(money(forecast.reserveMinor, true))}</text>
       <line x1="${padX}" y1="${plotBottom}" x2="${width - padX}" y2="${plotBottom}" class="axis-line" />
       <polygon points="${points} ${x(forecast.horizonDays)},${plotBottom} ${padX},${plotBottom}" fill="url(#cashArea)" />
       <polyline points="${points}" class="cash-line" />
@@ -524,18 +532,23 @@ function renderForecastChart(forecast) {
         const tooltipX = Math.max(padX, Math.min(width - padX - tooltipWidth, pointX - tooltipWidth / 2));
         const tooltipY = Math.max(8, pointY - tooltipHeight - 14);
         const reserveDifference = point.balanceMinor - forecast.reserveMinor;
-        const reserveText = reserveDifference >= 0
-          ? `${money(reserveDifference, true)} above reserve`
-          : `${money(Math.abs(reserveDifference), true)} below reserve`;
+        const minimumText = reserveDifference >= 0
+          ? `${money(reserveDifference, true)} above your minimum`
+          : `${money(Math.abs(reserveDifference), true)} below your minimum`;
+        const eventTitle = point.label === "Today"
+          ? "Current balance"
+          : point.label.startsWith("Bills")
+            ? "After monthly bills"
+            : "After expected monthly income";
         return `
-          <g class="forecast-point" tabindex="0" role="img" aria-label="${escapeHtml(`${point.label}, day ${point.day}, projected balance ${money(point.balanceMinor)}, ${reserveText}`)}">
+          <g class="forecast-point" tabindex="0" role="img" aria-label="${escapeHtml(`Day ${point.day}, ${eventTitle}, estimated balance ${money(point.balanceMinor)}, ${minimumText}`)}">
             <circle cx="${pointX}" cy="${pointY}" r="12" class="cash-point-hit" />
             <circle cx="${pointX}" cy="${pointY}" r="5" class="cash-point" />
             <g class="forecast-tooltip" aria-hidden="true">
               <rect x="${tooltipX}" y="${tooltipY}" width="${tooltipWidth}" height="${tooltipHeight}" rx="9" />
-              <text x="${tooltipX + 11}" y="${tooltipY + 18}" class="tooltip-title">${escapeHtml(point.label)} · Day ${point.day}</text>
+              <text x="${tooltipX + 11}" y="${tooltipY + 18}" class="tooltip-title">Day ${point.day} · ${escapeHtml(eventTitle)}</text>
               <text x="${tooltipX + 11}" y="${tooltipY + 37}" class="tooltip-value">${escapeHtml(money(point.balanceMinor))}</text>
-              <text x="${tooltipX + 11}" y="${tooltipY + 52}" class="tooltip-detail">${escapeHtml(reserveText)}</text>
+              <text x="${tooltipX + 11}" y="${tooltipY + 53}" class="tooltip-detail">${escapeHtml(minimumText)}</text>
             </g>
           </g>
         `;
@@ -548,6 +561,38 @@ function renderForecastChart(forecast) {
   `;
 }
 
+function renderCommitments() {
+  const commitments = [...state.commitments].sort((a, b) => a.dueDay - b.dueDay);
+  const totalMinor = commitments.reduce((sum, item) => sum + item.amountMinor, 0);
+
+  return `
+    <section class="panel commitments-panel">
+      <div class="panel-heading commitments-heading">
+        <div>
+          <div class="section-kicker">This month</div>
+          <h2>Upcoming monthly bills</h2>
+          <p>These bills are included in the balance forecast below.</p>
+        </div>
+        <button class="ghost-button" data-action="settings">${commitments.length ? "Edit bills" : "Add a bill"}</button>
+      </div>
+      ${commitments.length ? `
+        <div class="commitment-dashboard-list">
+          ${commitments.map((item) => `
+            <div class="commitment-dashboard-row">
+              <span><b>${escapeHtml(item.name)}</b><small>Due on day ${item.dueDay} of every month</small></span>
+              <strong>${money(item.amountMinor)}</strong>
+            </div>
+          `).join("")}
+          <div class="commitment-dashboard-total">
+            <span>Total for the next 30 days</span>
+            <strong>${money(totalMinor)}</strong>
+          </div>
+        </div>
+      ` : `<div class="commitment-empty"><b>No monthly bills added</b><span>Add regular payments so CashLatch can include them in your forecast.</span></div>`}
+    </section>
+  `;
+}
+
 function renderGoal(goal, plan) {
   const allocation = plan?.allocations.find((item) => item.goalId === goal.id)?.amountMinor || 0;
   return `
@@ -556,7 +601,7 @@ function renderGoal(goal, plan) {
         <div class="goal-icon" style="--goal-color:${goal.color}">${escapeHtml(goal.name.slice(0, 1))}</div>
         <div>
           <h3>${escapeHtml(goal.name)}</h3>
-          <p>${escapeHtml(goal.priority)} · ${escapeHtml(goal.targetDate)}</p>
+          <p>${escapeHtml(priorityLabel(goal.priority))} · Target ${escapeHtml(goal.targetDate)}</p>
         </div>
         <span class="goal-percent">${progressPercent(goal)}%</span>
       </div>
@@ -566,7 +611,7 @@ function renderGoal(goal, plan) {
         <span>of ${money(goal.targetMinor)}</span>
       </div>
       <label class="allocation-field">
-        <span>Allocate now</span>
+        <span>Add to this goal</span>
         <div><b>${escapeHtml(new Intl.NumberFormat("en-IN", { style: "currency", currency: state.currency, maximumFractionDigits: 0 }).formatToParts(0).find((part) => part.type === "currency")?.value || "₹")}</b><input inputmode="decimal" name="allocation-${goal.id}" value="${allocation ? fromMinorUnits(allocation) : ""}" placeholder="0" /></div>
       </label>
     </article>
@@ -579,14 +624,14 @@ function renderPlan(plan) {
       <section class="panel plan-panel empty-plan">
         <div class="section-kicker">Recommendation</div>
         <h2>No recommendation yet</h2>
-        <p>Enter an allocation above or ask ChatGPT to compare options and prepare a recommendation.</p>
+        <p>Enter an amount for a goal above, or ask ChatGPT to compare options and prepare a recommendation.</p>
       </section>
     `;
   }
 
   const statusLabels = {
     staged: "Review this recommendation",
-    blocked: "This plan breaks one of your limits",
+    blocked: "This recommendation breaks one of your limits",
     authorized: "Ready to apply",
     stale: "Your finances changed—review again",
     committed: "Applied successfully",
@@ -603,7 +648,7 @@ function renderPlan(plan) {
     <section class="panel plan-panel ${plan.status}">
       <div class="plan-title-row">
         <div>
-          <div class="section-kicker">Recommendation · ${escapeHtml(plan.id)}</div>
+          <div class="section-kicker">Goal funding recommendation</div>
           <h2>${statusLabels[plan.status] || escapeHtml(plan.status)}</h2>
         </div>
         <span class="status-pill ${plan.status}">${escapeHtml(statusPills[plan.status] || plan.status)}</span>
@@ -613,23 +658,23 @@ function renderPlan(plan) {
           const goal = state.goals.find((item) => item.id === allocation.goalId);
           return `<div><span>${escapeHtml(goal?.name || allocation.goalId)}</span><strong>${money(allocation.amountMinor)}</strong></div>`;
         }).join("")}
-        <div class="plan-total"><span>Total allocation</span><strong>${money(plan.totalAllocationMinor)}</strong></div>
+        <div class="plan-total"><span>Total going to goals</span><strong>${money(plan.totalAllocationMinor)}</strong></div>
       </div>
       <div class="plan-metrics">
-        <div><span>Checking after</span><strong>${money(plan.checkingAfterMinor)}</strong></div>
-        <div><span>Upcoming commitments</span><strong>${money(plan.upcomingCommitmentsMinor)}</strong></div>
-        <div><span>Lowest projected</span><strong>${money(plan.lowestProjectedMinor)}</strong></div>
+        <div><span>Balance after adding to goals</span><strong>${money(plan.checkingAfterMinor)}</strong></div>
+        <div><span>Monthly bills</span><strong>${money(plan.upcomingCommitmentsMinor)}</strong></div>
+        <div><span>Lowest expected balance</span><strong>${money(plan.lowestProjectedMinor)}</strong></div>
       </div>
       ${plan.violations.length ? `
         <div class="violations">
-          ${plan.violations.map((violation) => `<p><b>${escapeHtml(violation.code)}</b> ${escapeHtml(violation.message)}</p>`).join("")}
+          ${plan.violations.map((violation) => `<p>${escapeHtml(violation.message)}</p>`).join("")}
         </div>
-      ` : `<p class="pass-note">✓ This plan stays within the limits currently saved in CashLatch. This is not financial advice.</p>`}
+      ` : `<p class="pass-note">✓ This recommendation keeps your expected balance above the minimum you chose. This is not financial advice.</p>`}
       <div class="plan-actions">
-        ${plan.status === "staged" ? `<button class="primary-button" data-action="authorize">Approve this plan</button><button class="ghost-button" data-action="reject-plan">Reject</button>` : ""}
-        ${plan.status === "authorized" ? `<div class="authorized-note"><span>Approval ${permit?.shortId || "—"}</span><b>Return to ChatGPT and say: Apply my approved plan</b></div>` : ""}
+        ${plan.status === "staged" ? `<button class="primary-button" data-action="authorize">Approve this recommendation</button><button class="ghost-button" data-action="reject-plan">Reject</button>` : ""}
+        ${plan.status === "authorized" ? `<div class="authorized-note"><span>One-time approval ${permit?.shortId || "—"}</span><b>Return to ChatGPT and say: Apply my approved recommendation</b></div>` : ""}
         ${plan.status === "stale" ? `<button class="primary-button" data-action="restage-safe">Update recommendation</button>` : ""}
-        ${plan.status === "committed" ? `<div class="authorized-note"><span>Decision receipt</span><b>${escapeHtml(state.receipts?.[0]?.id || "Applied")}</b></div>` : ""}
+        ${plan.status === "committed" ? `<div class="authorized-note"><span>Confirmation</span><b>${escapeHtml(state.receipts?.[0]?.id || "Applied")}</b></div>` : ""}
       </div>
     </section>
   `;
@@ -637,35 +682,35 @@ function renderPlan(plan) {
 
 function renderAccessPanel() {
   const baseTools = [
-    "Read and forecast this workspace",
-    "Add goals and monthly commitments",
+    "Read this money workspace and estimate future balances",
+    "Add savings goals and monthly bills",
     "Record income and expenses",
-    "Compare and prepare allocations",
+    "Compare options and prepare a recommendation",
   ];
   return `
     <section class="panel access-panel">
       <div class="access-header">
         <div>
           <div class="section-kicker">ChatGPT access</div>
-          <h2>What your agent can do</h2>
+          <h2>What ChatGPT can help with</h2>
         </div>
-        <span class="connection-badge ${webmcpStatus.connected ? "online" : "offline"}"><i></i>${webmcpStatus.connected ? "Connected" : "Preview"}</span>
+        <span class="connection-badge ${webmcpStatus.connected ? "online" : "offline"}"><i></i>${webmcpStatus.connected ? "Connected" : "Not connected"}</span>
       </div>
       <p class="access-message">${escapeHtml(webmcpStatus.message)}</p>
       <div class="tool-list">
         ${baseTools.map((tool) => `<div><span class="tool-dot read"></span><span>${tool}</span><b>Available</b></div>`).join("")}
         <div class="execute-tool ${permit ? "active" : "locked"}">
           <span class="tool-dot execute"></span>
-          <span>${permit ? "Apply your approved plan" : "Apply a financial plan"}</span>
-          <b>${permit ? "Available once" : "Locked until you approve"}</b>
+          <span>${permit ? "Apply your approved recommendation" : "Apply a recommendation"}</span>
+          <b>${permit ? "Can be used once" : "Needs your approval"}</b>
         </div>
       </div>
       <div class="permit-card ${permit ? "visible" : ""}">
         ${permit ? `
-          <div><span>Approval code</span><strong>${permit.shortId}</strong></div>
-          <div><span>Uses remaining</span><strong>1</strong></div>
-          <p>Expires ${new Date(permit.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}. Any financial change cancels it.</p>
-        ` : `<p>ChatGPT can prepare a plan, but only you can unlock the exact plan you reviewed.</p>`}
+          <div><span>One-time approval</span><strong>${permit.shortId}</strong></div>
+          <div><span>Can be used</span><strong>Once</strong></div>
+          <p>Valid until ${new Date(permit.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}. Any financial change cancels it.</p>
+        ` : `<p>ChatGPT can prepare a recommendation, but only you can approve the exact recommendation you reviewed.</p>`}
       </div>
     </section>
   `;
@@ -677,7 +722,7 @@ function renderWorkspaceDraftReview() {
   return `
     <section class="workspace-review-card" aria-live="polite">
       <div>
-        <span class="review-label">${workspaceDraft.source === "agent" ? "ChatGPT prepared this" : "Review your workspace"}</span>
+        <span class="review-label">${workspaceDraft.source === "agent" ? "ChatGPT prepared this" : "Review your money workspace"}</span>
         <h2>${escapeHtml(workspaceDraft.name)}</h2>
         <p>Nothing is saved until you confirm these details.</p>
       </div>
@@ -686,11 +731,11 @@ function renderWorkspaceDraftReview() {
         <span><small>Currency</small><b>${escapeHtml(workspaceDraft.currency)}</b></span>
         <span><small>Current balance</small><b>${draftMoney(workspaceDraft.checking)}</b></span>
         <span><small>Monthly income</small><b>${draftMoney(workspaceDraft.monthlyIncome)}</b></span>
-        <span><small>Protected minimum</small><b>${draftMoney(workspaceDraft.minimumReserve)}</b></span>
-        <span><small>Plan limit</small><b>${draftMoney(workspaceDraft.maximumAllocation)}</b></span>
+        <span><small>Minimum balance to keep</small><b>${draftMoney(workspaceDraft.minimumReserve)}</b></span>
+        <span><small>Maximum for one recommendation</small><b>${draftMoney(workspaceDraft.maximumAllocation)}</b></span>
       </div>
       <div class="review-actions">
-        <button class="primary-button" data-action="confirm-workspace">Open workspace</button>
+        <button class="primary-button" data-action="confirm-workspace">Open money workspace</button>
         <button class="ghost-button" data-action="edit-workspace-draft">Edit details</button>
         <button class="ghost-button" data-action="cancel-workspace-draft">Cancel</button>
       </div>
@@ -707,16 +752,16 @@ function renderWelcome() {
       <main class="welcome-main">
         <section class="welcome-copy">
           <div class="eyebrow"><span></span>You stay in control</div>
-          <h1>Plan your money without risking what comes next.</h1>
-          <p>Keep balances, bills and goals in one private browser workspace. ChatGPT can organize the details and compare options. CashLatch checks your limits before anything is applied.</p>
+          <h1>Plan your money. Protect what matters.</h1>
+          <p>Track your balance, income, expenses, monthly bills and savings goals in one money workspace. ChatGPT can compare options, while CashLatch checks the limits you set.</p>
           <div class="welcome-steps">
-            <div><b>1</b><span><strong>Tell us the basics</strong><small>Create your own workspace—no demo data mixed in.</small></span></div>
-            <div><b>2</b><span><strong>Ask ChatGPT to help</strong><small>It can add goals, record changes and prepare a plan.</small></span></div>
-            <div><b>3</b><span><strong>Approve the exact plan</strong><small>If your finances change, the old approval is cancelled.</small></span></div>
+            <div><b>1</b><span><strong>Tell us the basics</strong><small>Create your own money workspace—no example data mixed in.</small></span></div>
+            <div><b>2</b><span><strong>Ask ChatGPT to help</strong><small>It can add goals, record changes and prepare a recommendation.</small></span></div>
+            <div><b>3</b><span><strong>Approve the recommendation</strong><small>If your finances change, the old approval is cancelled.</small></span></div>
           </div>
           <div class="welcome-actions">
-            <button class="primary-button large-button" data-action="new-workspace">Create my workspace</button>
-            <button class="ghost-button large-button" data-action="load-demo">Try fictional demo</button>
+            <button class="primary-button large-button" data-action="new-workspace">Create my money workspace</button>
+            <button class="ghost-button large-button" data-action="load-demo">Open example finances</button>
           </div>
           <p class="welcome-privacy">Stored in this browser. CashLatch has no financial-data server.</p>
         </section>
@@ -724,17 +769,17 @@ function renderWelcome() {
           <span class="section-kicker">Prefer to start in chat?</span>
           <h2>Describe your situation naturally</h2>
           <p>With this page open beside ChatGPT, try:</p>
-          <blockquote>Create a Personal workspace in INR. My balance is ₹76,000, income is ₹80,000, I want to protect ₹25,000, and no plan should allocate more than ₹15,000.</blockquote>
-          <small>ChatGPT will prepare a draft here. You review it before the workspace is created.</small>
+          <blockquote>Create a personal money workspace in INR. My balance is ₹76,000, income is ₹80,000, I want to keep at least ₹25,000, and no recommendation should put more than ₹15,000 toward my goals.</blockquote>
+          <small>ChatGPT will prepare the details here. You review them before the money workspace is created.</small>
         </aside>
         ${renderWorkspaceDraftReview()}
         ${workspaces.length ? `
           <section class="saved-workspaces" aria-labelledby="saved-workspaces-title">
-            <div class="saved-workspaces-heading"><div><span class="section-kicker">Saved in this browser</span><h2 id="saved-workspaces-title">Your workspaces</h2></div><button class="primary-button" data-action="new-workspace">+ New workspace</button></div>
+            <div class="saved-workspaces-heading"><div><span class="section-kicker">Saved in this browser</span><h2 id="saved-workspaces-title">Your money workspaces</h2></div><button class="primary-button" data-action="new-workspace">+ New money workspace</button></div>
             <div class="saved-workspace-grid">
               ${workspaces.map((workspace) => `
                 <button class="saved-workspace-card" data-action="open-workspace" data-id="${workspace.id}">
-                  <span><b>${escapeHtml(workspace.name)}</b><small>${escapeHtml(workspace.workspaceType)} · ${escapeHtml(workspace.currency)}${workspace.isDemo ? " · Fictional demo" : ""}</small></span>
+                  <span><b>${escapeHtml(workspace.name)}</b><small>${escapeHtml(workspace.workspaceType)} · ${escapeHtml(workspace.currency)}${workspace.isDemo ? " · Fictional data" : ""}</small></span>
                   <strong>Open →</strong>
                 </button>
               `).join("")}
@@ -755,27 +800,27 @@ function renderNewWorkspaceModal() {
     <div class="modal-backdrop" data-action="close-modal">
       <section class="modal setup-modal" role="dialog" aria-modal="true" aria-labelledby="new-workspace-title">
         <div class="modal-header">
-          <div><div class="section-kicker">Your details</div><h2 id="new-workspace-title">Create a workspace</h2></div>
+          <div><div class="section-kicker">Your details</div><h2 id="new-workspace-title">Create a money workspace</h2></div>
           <button class="icon-button" data-action="close-modal" aria-label="Close">×</button>
         </div>
         <p class="modal-intro">Start with the numbers that affect your next decision. You can add goals and bills afterward.</p>
         <form id="new-workspace-form">
           <div class="form-grid">
-            <label>${fieldTitle("Workspace name", "A private label to help you distinguish this set of finances from your other workspaces.")}<input name="name" placeholder="For example, Personal finances" value="${escapeHtml(draft.name || "Personal finances")}" maxlength="60" required /></label>
-            <label>${fieldTitle("Workspace type", "Choose the closest use, or select Custom and name your own type. This label does not change permissions.")}<select name="workspaceType" data-custom-type-select="new-workspace-custom">
-              ${WORKSPACE_TYPES.map((type) => `<option value="${type}" ${draft.workspaceType === type ? "selected" : ""}>${type}</option>`).join("")}
-              <option value="custom" ${draft.workspaceType && !WORKSPACE_TYPES.includes(draft.workspaceType) ? "selected" : ""}>custom</option>
+            <label>${fieldTitle("Money workspace name", "A private label to help you distinguish this set of finances from your other money workspaces.")}<input name="name" placeholder="For example, Personal finances" value="${escapeHtml(draft.name || "Personal finances")}" maxlength="60" required /></label>
+            <label>${fieldTitle("What is it for?", "Choose the closest use, or select Custom and name your own type. This label does not change what ChatGPT can do.")}<select name="workspaceType" data-custom-type-select="new-workspace-custom">
+              ${WORKSPACE_TYPES.map((type) => `<option value="${type}" ${draft.workspaceType === type ? "selected" : ""}>${type.charAt(0).toUpperCase() + type.slice(1)}</option>`).join("")}
+              <option value="custom" ${draft.workspaceType && !WORKSPACE_TYPES.includes(draft.workspaceType) ? "selected" : ""}>Custom</option>
             </select></label>
-            <label id="new-workspace-custom" class="custom-type-field ${draft.workspaceType && !WORKSPACE_TYPES.includes(draft.workspaceType) ? "" : "is-hidden"}">${fieldTitle("Custom workspace type", "A short label such as Travel, Wedding, Education, or Side project.")}<input name="workspaceTypeCustom" placeholder="For example, Education" value="${escapeHtml(draft.workspaceType && !WORKSPACE_TYPES.includes(draft.workspaceType) ? draft.workspaceType : "")}" maxlength="40" /></label>
+            <label id="new-workspace-custom" class="custom-type-field ${draft.workspaceType && !WORKSPACE_TYPES.includes(draft.workspaceType) ? "" : "is-hidden"}">${fieldTitle("Custom purpose", "A short label such as Travel, Wedding, Education, or Side project.")}<input name="workspaceTypeCustom" placeholder="For example, Education" value="${escapeHtml(draft.workspaceType && !WORKSPACE_TYPES.includes(draft.workspaceType) ? draft.workspaceType : "")}" maxlength="40" /></label>
             <label>${fieldTitle("Currency", "Controls how money is displayed. CashLatch does not perform currency conversion.")}<select name="currency">
               ${["INR", "USD", "EUR", "GBP", "CAD", "AUD", "JPY"].map((currency) => `<option value="${currency}" ${(draft.currency || "INR") === currency ? "selected" : ""}>${currency}</option>`).join("")}
             </select></label>
-            <label>${fieldTitle("Current available balance", "The amount currently available in the account you want CashLatch to plan from.")}<input name="checking" type="number" min="0" step="0.01" placeholder="0.00" value="${draft.checking ?? ""}" required /></label>
+            <label>${fieldTitle("Current balance", "The amount currently available in the account you want CashLatch to plan from.")}<input name="checking" type="number" min="0" step="0.01" placeholder="0.00" value="${draft.checking ?? ""}" required /></label>
             <label>${fieldTitle("Expected monthly income", "Your normal monthly inflow. CashLatch uses it only for projections.")}<input name="monthlyIncome" type="number" min="0" step="0.01" placeholder="0.00" value="${draft.monthlyIncome ?? ""}" required /></label>
-            <label>${fieldTitle("Protected minimum balance", "The lowest balance you want forecasts and plans to preserve.")}<input name="minimumReserve" type="number" min="0" step="0.01" placeholder="0.00" value="${draft.minimumReserve ?? ""}" required /><small>CashLatch will not approve a plan projected to cross this.</small></label>
-            <label>${fieldTitle("Maximum amount per plan", "A hard cap on the total amount any single plan can allocate.")}<input name="maximumAllocation" type="number" min="0" step="0.01" placeholder="0.00" value="${draft.maximumAllocation ?? ""}" required /></label>
+            <label>${fieldTitle("Minimum balance to keep", "The lowest balance you want CashLatch to preserve.")}<input name="minimumReserve" type="number" min="0" step="0.01" placeholder="0.00" value="${draft.minimumReserve ?? ""}" required /><small>CashLatch will not approve a recommendation that takes your expected balance below this amount.</small></label>
+            <label>${fieldTitle("Maximum for one recommendation", "The largest total amount CashLatch will allow one recommendation to put toward goals.")}<input name="maximumAllocation" type="number" min="0" step="0.01" placeholder="0.00" value="${draft.maximumAllocation ?? ""}" required /></label>
           </div>
-          <div class="modal-actions"><button type="button" class="ghost-button" data-action="close-modal">Cancel</button><button class="primary-button" type="submit">Review workspace</button></div>
+          <div class="modal-actions"><button type="button" class="ghost-button" data-action="close-modal">Cancel</button><button class="primary-button" type="submit">Review details</button></div>
         </form>
       </section>
     </div>
@@ -792,8 +837,8 @@ function renderBoundaryReview() {
         <p>${escapeHtml(boundaryDraft.reason)}</p>
       </div>
       <div class="boundary-comparison">
-        <span><small>Protected minimum</small><b>${money(state.boundaries.minimumReserveMinor)} → ${money(boundaryDraft.minimumReserveMinor)}</b></span>
-        <span><small>Maximum per plan</small><b>${money(state.boundaries.maximumAllocationMinor)} → ${money(boundaryDraft.maximumAllocationMinor)}</b></span>
+        <span><small>Minimum balance to keep</small><b>${money(state.boundaries.minimumReserveMinor)} → ${money(boundaryDraft.minimumReserveMinor)}</b></span>
+        <span><small>Maximum for one recommendation</small><b>${money(state.boundaries.maximumAllocationMinor)} → ${money(boundaryDraft.maximumAllocationMinor)}</b></span>
       </div>
       <div class="review-actions">
         <button class="primary-button" data-action="accept-boundaries">Accept new limits</button>
@@ -809,24 +854,24 @@ function renderSettingsModal() {
     <div class="modal-backdrop" data-action="close-modal">
       <section class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <div class="modal-header">
-          <div><div class="section-kicker">Workspace settings</div><h2 id="settings-title">Edit ${escapeHtml(state.name)}</h2></div>
+          <div><div class="section-kicker">Money workspace settings</div><h2 id="settings-title">Edit ${escapeHtml(state.name)}</h2></div>
           <button class="icon-button" data-action="close-modal" aria-label="Close">×</button>
         </div>
         <form id="settings-form">
           <div class="form-grid">
-            <label>${fieldTitle("Workspace name", "A private label used to identify this workspace.")}<input name="workspaceName" placeholder="Workspace name" value="${escapeHtml(state.name)}" maxlength="60" required /></label>
-            <label>${fieldTitle("Workspace type", "Describes what this workspace is for. Select Custom to use your own label.")}<select name="workspaceType" data-custom-type-select="settings-custom">
-              ${WORKSPACE_TYPES.map((type) => `<option value="${type}" ${state.workspaceType === type ? "selected" : ""}>${type}</option>`).join("")}
-              <option value="custom" ${!WORKSPACE_TYPES.includes(state.workspaceType) ? "selected" : ""}>custom</option>
+            <label>${fieldTitle("Money workspace name", "A private label used to identify this set of finances.")}<input name="workspaceName" placeholder="For example, Personal finances" value="${escapeHtml(state.name)}" maxlength="60" required /></label>
+            <label>${fieldTitle("What is it for?", "Describes what this money workspace is for. Select Custom to use your own label.")}<select name="workspaceType" data-custom-type-select="settings-custom">
+              ${WORKSPACE_TYPES.map((type) => `<option value="${type}" ${state.workspaceType === type ? "selected" : ""}>${type.charAt(0).toUpperCase() + type.slice(1)}</option>`).join("")}
+              <option value="custom" ${!WORKSPACE_TYPES.includes(state.workspaceType) ? "selected" : ""}>Custom</option>
             </select></label>
-            <label id="settings-custom" class="custom-type-field ${!WORKSPACE_TYPES.includes(state.workspaceType) ? "" : "is-hidden"}">${fieldTitle("Custom workspace type", "A short label that explains what this workspace is for.")}<input name="workspaceTypeCustom" placeholder="For example, Wedding" value="${escapeHtml(!WORKSPACE_TYPES.includes(state.workspaceType) ? state.workspaceType : "")}" maxlength="40" /></label>
-            <label>${fieldTitle("Workspace currency", "Changes number formatting only; existing values are not converted.")}<select name="currency">
+            <label id="settings-custom" class="custom-type-field ${!WORKSPACE_TYPES.includes(state.workspaceType) ? "" : "is-hidden"}">${fieldTitle("Custom purpose", "A short label that explains what this money workspace is for.")}<input name="workspaceTypeCustom" placeholder="For example, Wedding" value="${escapeHtml(!WORKSPACE_TYPES.includes(state.workspaceType) ? state.workspaceType : "")}" maxlength="40" /></label>
+            <label>${fieldTitle("Currency", "Changes number formatting only; existing values are not converted.")}<select name="currency">
               ${["INR", "USD", "EUR", "GBP", "CAD", "AUD", "JPY"].map((currency) => `<option value="${currency}" ${state.currency === currency ? "selected" : ""}>${currency}</option>`).join("")}
             </select></label>
-            <label>${fieldTitle("Checking balance", "The current amount available for planning.")}<input name="checking" type="number" min="0" step="0.01" placeholder="0.00" value="${fromMinorUnits(state.checkingMinor)}" required /></label>
+            <label>${fieldTitle("Current balance", "The current amount available for planning.")}<input name="checking" type="number" min="0" step="0.01" placeholder="0.00" value="${fromMinorUnits(state.checkingMinor)}" required /></label>
             <label>${fieldTitle("Monthly income", "The recurring monthly income used by the forecast.")}<input name="monthlyIncome" type="number" min="0" step="0.01" placeholder="0.00" value="${fromMinorUnits(state.monthlyIncomeMinor)}" required /></label>
-            <label>${fieldTitle("Minimum reserve", "Plans are blocked when their forecast would cross this protected amount.")}<input name="minimumReserve" type="number" min="0" step="0.01" placeholder="0.00" value="${fromMinorUnits(state.boundaries.minimumReserveMinor)}" required /></label>
-            <label>${fieldTitle("Maximum allocation", "The maximum combined amount CashLatch will allow in one plan.")}<input name="maximumAllocation" type="number" min="0" step="0.01" placeholder="0.00" value="${fromMinorUnits(state.boundaries.maximumAllocationMinor)}" required /></label>
+            <label>${fieldTitle("Minimum balance to keep", "Recommendations are blocked when the expected balance would fall below this amount.")}<input name="minimumReserve" type="number" min="0" step="0.01" placeholder="0.00" value="${fromMinorUnits(state.boundaries.minimumReserveMinor)}" required /></label>
+            <label>${fieldTitle("Maximum for one recommendation", "The largest combined amount CashLatch will allow one recommendation to put toward goals.")}<input name="maximumAllocation" type="number" min="0" step="0.01" placeholder="0.00" value="${fromMinorUnits(state.boundaries.maximumAllocationMinor)}" required /></label>
           </div>
           <div class="form-section-heading"><h3 class="form-section-title">Goals</h3><button type="button" class="ghost-button small-button" data-action="add-goal">+ Add goal</button></div>
           <div class="editable-list">
@@ -836,24 +881,24 @@ function renderSettingsModal() {
                 <label class="compact-field"><span>Saved so far</span><input name="goalCurrent-${goal.id}" type="number" min="0" step="0.01" placeholder="0.00" value="${fromMinorUnits(goal.currentMinor)}" /></label>
                 <label class="compact-field"><span>Target amount</span><input name="goalTarget-${goal.id}" type="number" min="0.01" step="0.01" placeholder="0.00" value="${fromMinorUnits(goal.targetMinor)}" /></label>
                 <label class="compact-field"><span>Target date</span><input name="goalDate-${goal.id}" type="date" value="${goal.targetDate}" /></label>
-                <label class="compact-field"><span>Priority</span><select name="goalPriority-${goal.id}">${["essential", "important", "flexible"].map((priority) => `<option value="${priority}" ${goal.priority === priority ? "selected" : ""}>${priority}</option>`).join("")}</select></label>
+                <label class="compact-field"><span>Priority</span><select name="goalPriority-${goal.id}">${["essential", "important", "flexible"].map((priority) => `<option value="${priority}" ${goal.priority === priority ? "selected" : ""}>${priorityLabel(priority)}</option>`).join("")}</select></label>
                 <button type="button" class="remove-button" data-action="remove-goal" data-id="${goal.id}" aria-label="Remove ${escapeHtml(goal.name)}">×</button>
               </div>
             `).join("") || `<p class="empty-list-note">No goals yet. Add one here or ask ChatGPT.</p>`}
           </div>
-          <div class="form-section-heading"><h3 class="form-section-title">Monthly commitments</h3><button type="button" class="ghost-button small-button" data-action="add-commitment">+ Add commitment</button></div>
+          <div class="form-section-heading"><h3 class="form-section-title">Monthly bills</h3><button type="button" class="ghost-button small-button" data-action="add-commitment">+ Add bill</button></div>
           <div class="editable-list">
             ${state.commitments.map((item) => `
               <div class="editable-row commitment-row">
-                <label class="compact-field wide-field"><span>Commitment name</span><input name="commitmentName-${item.id}" placeholder="For example, Rent" value="${escapeHtml(item.name)}" /></label>
+                <label class="compact-field wide-field"><span>Bill name</span><input name="commitmentName-${item.id}" placeholder="For example, Rent" value="${escapeHtml(item.name)}" /></label>
                 <label class="compact-field"><span>Monthly amount</span><input name="commitmentAmount-${item.id}" type="number" min="0.01" step="0.01" placeholder="0.00" value="${fromMinorUnits(item.amountMinor)}" /></label>
                 <label class="compact-field"><span>Due day</span><input name="commitmentDay-${item.id}" type="number" min="1" max="31" placeholder="1–31" value="${item.dueDay}" /></label>
                 <button type="button" class="remove-button" data-action="remove-commitment" data-id="${item.id}" aria-label="Remove ${escapeHtml(item.name)}">×</button>
               </div>
-            `).join("") || `<p class="empty-list-note">No monthly commitments yet.</p>`}
+            `).join("") || `<p class="empty-list-note">No monthly bills yet.</p>`}
           </div>
           <p class="currency-warning">Changing currency changes formatting only; CashLatch does not convert existing amounts.</p>
-          <div class="modal-actions split-actions"><button type="button" class="danger-quiet-button" data-action="delete-workspace">Delete workspace</button><span></span><button type="button" class="ghost-button" data-action="close-modal">Cancel</button><button class="primary-button" type="submit">Save changes</button></div>
+          <div class="modal-actions split-actions"><button type="button" class="danger-quiet-button" data-action="delete-workspace">Delete money workspace</button><span></span><button type="button" class="ghost-button" data-action="close-modal">Cancel</button><button class="primary-button" type="submit">Save changes</button></div>
         </form>
       </section>
     </div>
@@ -869,7 +914,7 @@ function renderCsvModal() {
           <div><div class="section-kicker">Transactions</div><h2 id="csv-title">Import CSV history</h2></div>
           <button class="icon-button" data-action="close-modal" aria-label="Close">×</button>
         </div>
-        <p>Use headers <code>date,description,amount</code>. Imported history does not alter the current checking balance you entered.</p>
+        <p>The file must use the column names <code>date,description,amount</code>. Imported transactions do not change the current balance you entered.</p>
         <label class="file-drop"><input id="csv-file" type="file" accept=".csv,text/csv" /><span>Choose CSV file</span><small>Transactions stay in this browser workspace.</small></label>
       </section>
     </div>
@@ -886,6 +931,10 @@ function render() {
   const goalPlan = calculateGoalPlan(state);
   const plan = state.stagedPlan;
   const availableNow = Math.min(forecast.availableNowMinor, state.boundaries.maximumAllocationMinor);
+  const lowestPoint = forecast.points.reduce(
+    (lowest, point) => point.balanceMinor < lowest.balanceMinor ? point : lowest,
+    forecast.points[0],
+  );
   const recentActivity = state.activity.slice(0, 8);
   const recentTransactions = state.transactions.slice(0, 5);
 
@@ -894,44 +943,44 @@ function render() {
       <header class="topbar">
         <div class="topbar-brand-group">${renderBrand()}</div>
         <nav class="workspace-navigation" aria-label="Workspace controls">
-          <button class="back-to-workspaces" data-action="back-to-workspaces">← Workspaces</button>
+          <button class="back-to-workspaces" data-action="back-to-workspaces">← Money workspaces</button>
           <div class="workspace-switcher">
-          <label for="workspace-select">Workspace</label>
+          <label for="workspace-select">Money workspace</label>
           <select id="workspace-select">
-            ${workspaces.map((workspace) => `<option value="${workspace.id}" ${workspace.id === state.id ? "selected" : ""}>${escapeHtml(workspace.name)}${workspace.isDemo ? " · Demo" : ""}</option>`).join("")}
+            ${workspaces.map((workspace) => `<option value="${workspace.id}" ${workspace.id === state.id ? "selected" : ""}>${escapeHtml(workspace.name)}${workspace.isDemo ? " · Example" : ""}</option>`).join("")}
           </select>
           </div>
-          <button class="add-workspace-button" data-action="new-workspace"><span aria-hidden="true">+</span><span>New workspace</span></button>
+          <button class="add-workspace-button" data-action="new-workspace"><span aria-hidden="true">+</span><span>New money workspace</span></button>
           <details class="topbar-menu">
             <summary aria-label="Open workspace actions">Actions <span aria-hidden="true">▾</span></summary>
             <div class="topbar-menu-popover">
               <button data-action="import-csv"><span>Import CSV</span><small>Add transaction history</small></button>
-              <button data-action="settings"><span>Edit workspace</span><small>Balances, goals and limits</small></button>
-              <button data-action="load-demo"><span>Try fictional demo</span><small>Open sample data separately</small></button>
+              <button data-action="settings"><span>Edit money workspace</span><small>Balance, goals, bills and limits</small></button>
+              <button data-action="load-demo"><span>Open example finances</span><small>Uses clearly labelled fictional data</small></button>
             </div>
           </details>
         </nav>
       </header>
 
       <main>
-        ${state.isDemo ? `<div class="demo-banner"><b>Fictional demo</b><span>This workspace contains sample data. Create your own workspace to use CashLatch with your situation.</span><button class="ghost-button" data-action="new-workspace">Create mine</button></div>` : ""}
+        ${state.isDemo ? `<div class="demo-banner"><b>Example money workspace · Fictional data</b><span>These numbers are only for demonstrating CashLatch. Create your own money workspace to use your information.</span><button class="ghost-button" data-action="new-workspace">Create mine</button></div>` : ""}
         <section class="hero-panel">
           <div class="hero-copy">
             <div class="eyebrow"><span></span>${escapeHtml(state.name)}</div>
-            <h1>Plan money without risking<br /><em>what comes next.</em></h1>
-            <p>ChatGPT can organize your finances, compare options and prepare a plan. CashLatch checks every plan against the limits you set. Only you can approve it.</p>
+            <h1>Plan your money.<br /><em>Protect what matters.</em></h1>
+            <p>Track your money, plan for your goals and keep enough aside for what comes next. ChatGPT can compare options, while CashLatch checks the limits you set.</p>
             <div class="prompt-box">
-              <div><span>Suggested agent prompt</span><p>Help me fund my goals without putting my next 30 days of commitments or ${money(state.boundaries.minimumReserveMinor)} reserve at risk. Compare the trade-offs, then stage your recommendation.</p></div>
+              <div><span>Suggested ChatGPT prompt</span><p>Help me fund my goals without risking my monthly bills or the ${money(state.boundaries.minimumReserveMinor)} minimum balance I want to keep. Compare the options, then prepare your recommendation.</p></div>
               <button class="copy-button" data-action="copy-prompt" aria-label="Copy prompt">Copy</button>
             </div>
           </div>
           <div class="hero-balance">
-            <div class="balance-label">Checking available</div>
+            <div class="balance-label">Current balance</div>
             <strong>${money(state.checkingMinor)}</strong>
             <div class="balance-rule"><span style="width:${Math.min(100, (availableNow / Math.max(state.checkingMinor, 1)) * 100)}%"></span></div>
-            <div class="balance-split"><span>Allocatable now</span><b>${money(Math.max(0, availableNow))}</b></div>
-            <div class="balance-split"><span>30-day commitments</span><b>${money(forecast.monthlyCommitmentsMinor)}</b></div>
-            <div class="balance-split"><span>Protected reserve</span><b>${money(state.boundaries.minimumReserveMinor)}</b></div>
+            <div class="balance-split"><span>Available for goals</span><b>${money(Math.max(0, availableNow))}</b></div>
+            <div class="balance-split"><span>Monthly bills</span><b>${money(forecast.monthlyCommitmentsMinor)}</b></div>
+            <div class="balance-split"><span>Money kept aside</span><b>${money(state.boundaries.minimumReserveMinor)}</b></div>
           </div>
         </section>
 
@@ -939,28 +988,29 @@ function render() {
         ${renderBoundaryReview()}
 
         <section class="metrics-row">
-          <article><span>Monthly income</span><strong>${money(state.monthlyIncomeMinor)}</strong><small>Workspace estimate</small></article>
-          <article><span>Goal funding needed</span><strong>${money(goalPlan.totalRequiredMonthlyMinor)}</strong><small>${goalPlan.feasible ? "Within monthly capacity" : "Needs prioritization"}</small></article>
-          <article><span>Workspace freshness</span><strong>Update ${state.stateVersion}</strong><small>Any new financial change cancels approval</small></article>
-          <article><span>Apply plan</span><strong class="${permit ? "permit-on" : "permit-off"}">${permit ? "Ready once" : "Locked"}</strong><small>${permit ? `Approval ${permit.shortId}` : "You have not approved a plan"}</small></article>
+          <article><span>Monthly income</span><strong>${money(state.monthlyIncomeMinor)}</strong><small>Amount you entered</small></article>
+          <article><span>Needed monthly for goals</span><strong>${money(goalPlan.totalRequiredMonthlyMinor)}</strong><small>${goalPlan.feasible ? "Affordable with expected income" : "Goals need prioritization"}</small></article>
+          <article><span>Financial information</span><strong>Current</strong><small>Any money change cancels an old approval</small></article>
+          <article><span>Recommendation approval</span><strong class="${permit ? "permit-on" : "permit-off"}">${permit ? "Ready to use once" : "Waiting"}</strong><small>${permit ? `Approval ${permit.shortId}` : "Review and approve a recommendation first"}</small></article>
         </section>
 
         <div class="main-grid">
           <div class="primary-column">
+            ${renderCommitments()}
             <section class="panel forecast-panel">
               <div class="panel-heading">
-                <div><div class="section-kicker">90-day outlook</div><h2>Cash forecast</h2></div>
-                <div class="forecast-summary"><span>Lowest projected</span><strong>${money(forecast.lowestBalanceMinor)}</strong></div>
+                <div><div class="section-kicker">Next 90 days</div><h2>How your balance may change</h2><p class="forecast-description">An estimate based on your current balance, expected income and monthly bills.</p></div>
+                <div class="forecast-summary"><span>Lowest your balance may reach</span><strong>${money(forecast.lowestBalanceMinor)}</strong><small>${lowestPoint.day === 0 ? "Today" : `In about ${lowestPoint.day} days`}</small></div>
               </div>
               ${renderForecastChart(forecast)}
-              <div class="chart-legend"><span><i class="legend-cash"></i>Projected cash</span><span><i class="legend-reserve"></i>Your reserve boundary</span><small>Uses recorded income and recurring commitments; unentered expenses are not included.</small></div>
+              <div class="chart-legend"><span><i class="legend-cash"></i>Estimated balance</span><span><i class="legend-reserve"></i>Minimum balance to keep</span><small>The green line estimates your balance after expected income and monthly bills. Expenses you have not entered are not included.</small></div>
             </section>
 
             <section class="goals-section">
-              <div class="section-heading"><div><div class="section-kicker">Your priorities</div><h2>Goal allocation</h2></div><span>${state.goals.length} active goals</span></div>
+              <div class="section-heading"><div><div class="section-kicker">Your priorities</div><h2>Savings goals</h2></div><span>${state.goals.length} active goals</span></div>
               <form id="allocation-form">
-                <div class="goals-grid">${state.goals.map((goal) => renderGoal(goal, plan?.status === "staged" ? plan : null)).join("") || `<div class="empty-goals"><h3>No goals yet</h3><p>Add a goal in workspace settings or ask ChatGPT to add one from this page.</p><button type="button" class="ghost-button" data-action="settings">Add a goal</button></div>`}</div>
-                ${state.goals.length ? `<div class="allocation-submit"><span>Enter any split. CashLatch will test the exact plan against your current state.</span><button class="secondary-button" type="submit">Check & prepare plan</button></div>` : ""}
+                <div class="goals-grid">${state.goals.map((goal) => renderGoal(goal, plan?.status === "staged" ? plan : null)).join("") || `<div class="empty-goals"><h3>No goals yet</h3><p>Add a goal in money workspace settings or ask ChatGPT to add one from this page.</p><button type="button" class="ghost-button" data-action="settings">Add a goal</button></div>`}</div>
+                ${state.goals.length ? `<div class="allocation-submit"><span>Enter how much you want to add to each goal. CashLatch will check the total against your current information.</span><button class="secondary-button" type="submit">Check & prepare recommendation</button></div>` : ""}
               </form>
             </section>
 
@@ -983,22 +1033,22 @@ function render() {
           <aside class="side-column">
             ${renderAccessPanel()}
             <section class="panel boundaries-panel">
-              <div class="section-kicker">Deterministic rules</div><h2>Your boundaries</h2>
+              <div class="section-kicker">Your money rules</div><h2>Safety limits</h2>
               <div class="boundary-list">
-                <div><span>Minimum checking reserve</span><strong>${money(state.boundaries.minimumReserveMinor)}</strong></div>
-                <div><span>Maximum single allocation</span><strong>${money(state.boundaries.maximumAllocationMinor)}</strong></div>
-                <div><span>Recurring commitments</span><strong>${money(forecast.monthlyCommitmentsMinor)}</strong></div>
-                <div><span>Allow negative checking</span><strong>Never</strong></div>
+                <div><span>Minimum balance to keep</span><strong>${money(state.boundaries.minimumReserveMinor)}</strong></div>
+                <div><span>Maximum for one recommendation</span><strong>${money(state.boundaries.maximumAllocationMinor)}</strong></div>
+                <div><span>Monthly bills</span><strong>${money(forecast.monthlyCommitmentsMinor)}</strong></div>
+                <div><span>Can the balance go below zero?</span><strong>No</strong></div>
               </div>
-              <p>These values are application constraints—not instructions hidden in a prompt.</p>
+              <p>CashLatch checks these limits before a recommendation can be approved or applied.</p>
             </section>
             <section class="panel activity-panel">
-              <div class="section-kicker">Evidence</div><h2>Activity trail</h2>
+              <div class="section-kicker">What changed</div><h2>Recent activity</h2>
               <div class="activity-list">
                 ${recentActivity.map((item) => `<div class="activity-item ${item.type}"><i></i><span><b>${escapeHtml(item.message)}</b><small>${new Date(item.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</small></span></div>`).join("")}
               </div>
             </section>
-            <div class="privacy-note"><b>Local workspace</b><p>CashLatch does not upload or store this workspace on its own server. Data returned through site tools is shared with the browser agent you ask to use this page.</p></div>
+            <div class="privacy-note"><b>Saved in this browser</b><p>CashLatch does not upload this money workspace to its own server. When you ask ChatGPT to use CashLatch, only the information needed for that request is shared through the page tools.</p></div>
           </aside>
         </div>
       </main>
@@ -1037,7 +1087,7 @@ function bindEvents() {
       if (action === "authorize") await authorizeCurrentPlan();
       if (action === "confirm-workspace") {
         confirmWorkspaceDraft();
-        showToast("Workspace created");
+        showToast("Money workspace created");
         return;
       }
       if (action === "edit-workspace-draft") activeModal = "new-workspace";
@@ -1054,11 +1104,11 @@ function bindEvents() {
         return;
       }
       if (action === "reject-plan" && state?.stagedPlan) {
-        if (permit) revokePermit("plan rejected", { renderNow: false });
+        if (permit) revokePermit("you rejected the recommendation", { renderNow: false });
         state.stagedPlan = null;
-        addActivity(state, "Human rejected the prepared plan", "human");
+        addActivity(state, "You rejected the recommendation", "human");
         persist();
-        showToast("Plan rejected");
+        showToast("Recommendation rejected");
         return;
       }
       if (action === "copy-prompt") {
@@ -1068,16 +1118,16 @@ function bindEvents() {
         return;
       }
       if (action === "load-demo") {
-        if (permit) revokePermit("workspace changed", { renderNow: false });
+        if (permit) revokePermit("you opened another money workspace", { renderNow: false });
         const demo = freshDemoState();
         const existingDemoCount = workspaces.filter((item) => item.isDemo).length;
-        demo.name = existingDemoCount ? `Fictional demo ${existingDemoCount + 1}` : "Fictional demo";
+        demo.name = existingDemoCount ? `Example finances ${existingDemoCount + 1}` : "Example finances";
         workspaces.push(structuredClone(demo));
         state = demo;
         showWorkspaceHome = false;
         persist();
         activeModal = null;
-        showToast("Fictional demo opened in a separate workspace");
+        showToast("Example finances opened in a separate money workspace");
         return;
       }
       if (action === "surprise-expense") {
@@ -1090,13 +1140,13 @@ function bindEvents() {
             amountMinor: -2_000_000,
             kind: "expense",
           });
-        }, "Surprise expense added · checking reduced by ₹20,000");
-        showToast("Financial state changed. Any authorization was revoked.", "danger");
+        }, "Unexpected expense added · current balance reduced by ₹20,000");
+        showToast("Your balance changed. Any previous recommendation approval was cancelled.", "danger");
         return;
       }
       if (action === "restage-safe") {
         if (!state.goals.length) {
-          showToast("Add at least one goal before preparing a plan.", "danger");
+          showToast("Add at least one savings goal before preparing a recommendation.", "danger");
           return;
         }
         const maxSafe = Math.min(
@@ -1112,7 +1162,7 @@ function bindEvents() {
             ]
           : [{ goalId: firstGoal.id, amountMinor: maxSafe }];
         stagePlan(allocations);
-        showToast("Plan recalculated from the new state");
+        showToast("Recommendation updated using your latest information");
         return;
       }
       if (action === "add-goal") {
@@ -1129,21 +1179,21 @@ function bindEvents() {
         return;
       }
       if (action === "add-commitment") {
-        upsertCommitment({ name: "New commitment", amount: 1, dueDay: 1 });
+        upsertCommitment({ name: "New monthly bill", amount: 1, dueDay: 1 });
         activeModal = "settings";
         render();
         return;
       }
       if (action === "remove-commitment") {
         const id = element.dataset.id;
-        mutateFinancialState((next) => { next.commitments = next.commitments.filter((item) => item.id !== id); }, "Human removed a monthly commitment");
+        mutateFinancialState((next) => { next.commitments = next.commitments.filter((item) => item.id !== id); }, "You removed a monthly bill");
         activeModal = "settings";
         render();
         return;
       }
       if (action === "delete-workspace") {
         if (window.confirm(`Delete ${state.name} from this browser? This cannot be undone.`)) {
-          if (permit) revokePermit("workspace deleted", { renderNow: false });
+          if (permit) revokePermit("the money workspace was deleted", { renderNow: false });
           const deletedId = state.id;
           workspaces = workspaces.filter((workspace) => workspace.id !== deletedId);
           state = structuredClone(workspaces[0] || null);
@@ -1151,7 +1201,7 @@ function bindEvents() {
           activeModal = null;
           localStorage.setItem(ACTIVE_WORKSPACE_KEY, state?.id || "");
           persist();
-          showToast("Workspace deleted");
+          showToast("Money workspace deleted");
           return;
         }
       }
@@ -1241,9 +1291,9 @@ function bindEvents() {
         amountMinor: toMinorUnits(data.get(`commitmentAmount-${item.id}`)),
         dueDay: Math.max(1, Math.min(31, Number(data.get(`commitmentDay-${item.id}`)) || item.dueDay)),
       }));
-    }, "Workspace balances, goals, or boundaries updated");
+    }, "You updated the money workspace details");
     activeModal = null;
-    showToast("Workspace state updated");
+    showToast("Money workspace updated");
   });
 
   document.querySelector("#csv-file")?.addEventListener("change", async (event) => {
@@ -1267,7 +1317,7 @@ bridge.registerStaticTools();
 
 window.addEventListener("storage", (event) => {
   if (![WORKSPACES_KEY, ACTIVE_WORKSPACE_KEY].includes(event.key)) return;
-  if (permit) revokePermit("workspace changed in another tab", { renderNow: false });
+  if (permit) revokePermit("the money workspace changed in another tab", { renderNow: false });
   workspaces = loadWorkspaces();
   state = loadActiveWorkspace();
   boundaryDraft = null;

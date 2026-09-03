@@ -136,21 +136,21 @@ export function simulateAllocation(state, allocations = []) {
   const violations = [];
 
   if (normalized.length === 0) {
-    violations.push({ code: "EMPTY_PLAN", message: "Add at least one goal allocation." });
+    violations.push({ code: "NO_GOAL_SELECTED", message: "Choose at least one savings goal and enter an amount." });
   }
   if (totalAllocationMinor > state.boundaries.maximumAllocationMinor) {
     violations.push({
       code: "MAX_ALLOCATION",
-      message: "Total allocation exceeds the workspace maximum.",
+      message: "This recommendation exceeds the maximum you allow at one time.",
     });
   }
   if (checkingAfterMinor < 0) {
-    violations.push({ code: "INSUFFICIENT_FUNDS", message: "Checking would become negative." });
+    violations.push({ code: "NOT_ENOUGH_MONEY", message: "This recommendation would take your current balance below zero." });
   }
   if (forecast.lowestBalanceMinor < state.boundaries.minimumReserveMinor) {
     violations.push({
       code: "RESERVE_FLOOR",
-      message: "Projected checking would fall below the configured reserve after upcoming commitments.",
+      message: "Your lowest expected balance would fall below the minimum you want to keep after monthly bills.",
     });
   }
 

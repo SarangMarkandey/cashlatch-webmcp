@@ -1,7 +1,7 @@
 export const DEMO_STATE = {
   schemaVersion: 1,
   id: "demo-workspace",
-  name: "Fictional demo",
+  name: "Example finances",
   isDemo: true,
   createdAt: "2026-09-01T00:00:00.000Z",
   workspaceType: "household",
@@ -58,7 +58,7 @@ export const DEMO_STATE = {
       id: "activity-demo",
       at: new Date().toISOString(),
       type: "system",
-      message: "Demo workspace loaded",
+      message: "Example money workspace opened",
     },
   ],
 };
@@ -85,7 +85,7 @@ export function createBlankWorkspace({
   return {
     schemaVersion: 2,
     id: `workspace-${crypto.randomUUID().slice(0, 8)}`,
-    name: String(name || "My workspace").trim().slice(0, 60) || "My workspace",
+    name: String(name || "My money workspace").trim().slice(0, 60) || "My money workspace",
     isDemo: false,
     createdAt: now,
     workspaceType,
@@ -107,7 +107,7 @@ export function createBlankWorkspace({
         id: crypto.randomUUID(),
         at: now,
         type: "human",
-        message: "Workspace created",
+        message: "Money workspace created",
       },
     ],
   };
