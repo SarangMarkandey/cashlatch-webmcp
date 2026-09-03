@@ -577,29 +577,36 @@ function renderPlan(plan) {
   if (!plan) {
     return `
       <section class="panel plan-panel empty-plan">
-        <div class="section-kicker">Plan review</div>
-        <h2>No plan is waiting</h2>
-        <p>Enter an allocation above or ask ChatGPT to compare options and prepare a plan for you.</p>
+        <div class="section-kicker">Recommendation</div>
+        <h2>No recommendation yet</h2>
+        <p>Enter an allocation above or ask ChatGPT to compare options and prepare a recommendation.</p>
       </section>
     `;
   }
 
   const statusLabels = {
-    staged: "Ready for your review",
+    staged: "Review this recommendation",
     blocked: "This plan breaks one of your limits",
-    authorized: "Approved and ready once",
-    stale: "Previous approval cancelled",
-    committed: "Plan applied",
+    authorized: "Ready to apply",
+    stale: "Your finances changed—review again",
+    committed: "Applied successfully",
+  };
+  const statusPills = {
+    staged: "Review",
+    blocked: "Blocked",
+    authorized: "Ready",
+    stale: "Review again",
+    committed: "Applied",
   };
 
   return `
     <section class="panel plan-panel ${plan.status}">
       <div class="plan-title-row">
         <div>
-          <div class="section-kicker">Plan review · ${escapeHtml(plan.id)}</div>
+          <div class="section-kicker">Recommendation · ${escapeHtml(plan.id)}</div>
           <h2>${statusLabels[plan.status] || escapeHtml(plan.status)}</h2>
         </div>
-        <span class="status-pill ${plan.status}">${escapeHtml(plan.status)}</span>
+        <span class="status-pill ${plan.status}">${escapeHtml(statusPills[plan.status] || plan.status)}</span>
       </div>
       <div class="plan-allocations">
         ${plan.allocations.map((allocation) => {
@@ -619,9 +626,9 @@ function renderPlan(plan) {
         </div>
       ` : `<p class="pass-note">✓ This plan stays within the limits currently saved in CashLatch. This is not financial advice.</p>`}
       <div class="plan-actions">
-        ${plan.status === "staged" ? `<button class="primary-button" data-action="authorize">Approve this exact plan</button><button class="ghost-button" data-action="reject-plan">Reject</button>` : ""}
-        ${plan.status === "authorized" ? `<div class="authorized-note"><span>Approval ${permit?.shortId || "—"}</span><b>Ask ChatGPT to apply the approved plan</b></div>` : ""}
-        ${plan.status === "stale" ? `<button class="primary-button" data-action="restage-safe">Prepare a safe plan from current data</button>` : ""}
+        ${plan.status === "staged" ? `<button class="primary-button" data-action="authorize">Approve this plan</button><button class="ghost-button" data-action="reject-plan">Reject</button>` : ""}
+        ${plan.status === "authorized" ? `<div class="authorized-note"><span>Approval ${permit?.shortId || "—"}</span><b>Return to ChatGPT and say: Apply my approved plan</b></div>` : ""}
+        ${plan.status === "stale" ? `<button class="primary-button" data-action="restage-safe">Update recommendation</button>` : ""}
         ${plan.status === "committed" ? `<div class="authorized-note"><span>Decision receipt</span><b>${escapeHtml(state.receipts?.[0]?.id || "Applied")}</b></div>` : ""}
       </div>
     </section>

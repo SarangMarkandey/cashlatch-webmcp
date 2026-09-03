@@ -6,6 +6,11 @@ CashLatch is a browser-local financial planning workspace built for the OpenAI W
 
 ChatGPT can prepare changes and plans through the site's tools. CashLatch remains the system of record: it performs deterministic checks, shows consequential proposals on the webpage, and requires the person to approve an exact plan before it can be applied to the CashLatch ledger.
 
+## Live project
+
+- **Live app:** https://cashlatch-webmcp.vercel.app/
+- **Source code:** https://github.com/SarangMarkandey/cashlatch-webmcp
+
 ## Start as a real user
 
 CashLatch no longer opens with sample finances. On first visit, choose one of two paths:
@@ -69,7 +74,7 @@ After the human approves an exact valid plan, CashLatch dynamically registers:
 commit_plan_<permit-id>
 ```
 
-This temporary tool accepts no replacement amount or plan. It is tied to the exact plan, workspace state version and SHA-256 state fingerprint; expires after two minutes; rechecks all boundaries; works once; and disappears after use or any financial-state change. The fingerprint is a stale-state detector, not a digital signature or server-side security boundary.
+This temporary tool accepts no replacement amount or plan. It is tied to the exact plan, workspace state version and SHA-256 state fingerprint; expires after five minutes; rechecks all boundaries; works once; and disappears after use or any financial-state change. The fingerprint is a stale-state detector, not a digital signature or server-side security boundary.
 
 ## Run locally
 
@@ -87,13 +92,21 @@ Open `http://localhost:4173`. For WebMCP discovery, use ChatGPT's compatible bro
 npm test
 ```
 
-The tests cover workspace creation and currency, safe and blocked allocations, stale financial state, ledger application, goal planning, forecasting, CSV parsing, and registration/revocation of permanent and dynamic tools.
+The 15 automated tests cover workspace creation and currency, safe and blocked allocations, stale financial state, ledger application, goal planning, forecasting, CSV parsing, responsive interface requirements, and registration/revocation of permanent and dynamic tools.
+
+## Judge test
+
+Open the live app in ChatGPT's WebMCP-enabled in-app browser or Chrome 149+ with WebMCP testing enabled. Choose **Try fictional demo**, then ask:
+
+> Use CashLatch's site tools to read the active workspace, forecast 30, 60 and 90 days, calculate the goal requirements, compare at least two allocations, and prepare the safest valid recommendation. Prepare it now, but do not approve or apply it.
+
+Review the recommendation on the CashLatch page and select **Approve this plan**. Then ask ChatGPT to apply the approved plan. To test stale-state protection instead, record the fictional unexpected expense before applying and verify that CashLatch removes the one-use tool.
 
 ## Challenge demo path
 
 1. Open CashLatch and choose **Try fictional demo**.
 2. Ask ChatGPT to inspect the workspace, forecast 30/60/90 days, compare allocations and stage the safest plan without authorizing it.
-3. Review the plan on the webpage and select **Approve this exact plan**.
+3. Review the plan on the webpage and select **Approve this plan**.
 4. Observe the one-use apply capability become available.
 5. Before applying, select the fictional unexpected-expense button.
 6. Observe the plan become stale and the capability disappear.
