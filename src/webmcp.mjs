@@ -161,7 +161,12 @@ export function createWebMCPBridge({
           type: "object",
           properties: {
             name: { type: "string", minLength: 1, maxLength: 60 },
-            workspaceType: { type: "string", enum: ["personal", "household", "independent", "business"] },
+            workspaceType: {
+              type: "string",
+              minLength: 1,
+              maxLength: 40,
+              description: "Workspace category, such as personal, household, independent, business, education, wedding, or another user-supplied label.",
+            },
             currency: { type: "string", enum: ["INR", "USD", "EUR", "GBP", "CAD", "AUD", "JPY"] },
             checking: { type: "number", minimum: 0 },
             monthlyIncome: { type: "number", minimum: 0 },
@@ -218,7 +223,7 @@ export function createWebMCPBridge({
       },
       {
         name: "record_financial_event",
-        description: "Record income or an expense supplied by the user in the active workspace and update its current balance. Any plan authorization is cancelled because financial reality changed.",
+        description: "Record income or an expense supplied by the user in the active workspace and update its current balance. Any staged or approved plan becomes stale because financial reality changed.",
         inputSchema: {
           type: "object",
           properties: {

@@ -15,7 +15,8 @@ test("uses the new CashLatch brand without the old onboarding badge", () => {
 
 test("keeps workspace creation reachable from both home and dashboard", () => {
   assert.match(appSource, /data-action="back-to-workspaces"/);
-  assert.match(appSource, /data-action="new-workspace">\+ New workspace/);
+  assert.match(appSource, /data-action="new-workspace"/);
+  assert.match(appSource, />New workspace</);
   assert.match(appSource, /data-action="open-workspace"/);
   assert.ok(appSource.split("${renderNewWorkspaceModal()}").length >= 3);
 });
@@ -41,4 +42,15 @@ test("defines high-contrast dropdown options and a fixed forecast axis", () => {
   assert.match(styles, /select option \{[\s\S]*color: #f5faf7;[\s\S]*background: #12261f/);
   assert.match(appSource, /const axisDays = \[0, 30, 60, 90\]/);
   assert.doesNotMatch(appSource, />\$\{point\.day\}d<\/text>/);
+});
+
+test("provides compact navigation, custom workspace types, and chart details", () => {
+  assert.match(appSource, /class="topbar-menu"/);
+  assert.match(appSource, /data-action="import-csv"/);
+  assert.match(appSource, /data-action="settings"/);
+  assert.match(appSource, /value="custom"/);
+  assert.match(appSource, /workspaceTypeCustom/);
+  assert.match(appSource, /class="forecast-tooltip"/);
+  assert.match(appSource, /above reserve/);
+  assert.match(styles, /\.forecast-point:hover \.forecast-tooltip/);
 });

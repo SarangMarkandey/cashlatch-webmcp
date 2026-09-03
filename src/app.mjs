@@ -16,7 +16,11 @@ import { createWebMCPBridge } from "./webmcp.mjs";
 const LEGACY_STORAGE_KEY = "cashlatch-workspace-v1";
 const WORKSPACES_KEY = "cashlatch-workspaces-v2";
 const ACTIVE_WORKSPACE_KEY = "cashlatch-active-workspace-v2";
-const PERMIT_TTL_MS = 120_000;
+// Site-tool calls can take long enough that a two-minute approval expires while
+// the agent is still working. Five minutes keeps the permit short-lived without
+// turning normal model latency into an apparent failure.
+const PERMIT_TTL_MS = 300_000;
+const WORKSPACE_TYPES = ["personal", "household", "independent", "business"];
 const app = document.querySelector("#app");
 
 let workspaces = loadWorkspaces();
@@ -231,7 +235,7 @@ async function authorizeCurrentPlan() {
   }
 
   permitTimer = window.setTimeout(() => {
-    revokePermit("permit expired after two minutes");
+    revokePermit("permit expired");
   }, PERMIT_TTL_MS);
   render();
 }
@@ -399,6 +403,9 @@ function upsertCommitment(input, source = "human") {
 
 function recordFinancialEvent(input, source = "human") {
   if (!state) throw new Error("Create a workspace first.");
+  const previousPlanStatus = state.stagedPlan?.status || null;
+  const authorizationCancelled = Boolean(permit || previousPlanStatus === "authorized");
+  const planInvalidated = ["staged", "authorized"].includes(previousPlanStatus);
   const amountMinor = Math.max(1, toMinorUnits(input.amount));
   const signedAmount = input.kind === "expense" ? -amountMinor : amountMinor;
   const description = String(input.description || "Transaction").trim().slice(0, 120);
@@ -418,7 +425,13 @@ function recordFinancialEvent(input, source = "human") {
     transactionId,
     currentBalance: fromMinorUnits(state.checkingMinor),
     currency: state.currency,
-    authorizationCancelled: true,
+    planInvalidated,
+    authorizationCancelled,
+    message: authorizationCancelled
+      ? "The financial event was recorded and the active plan authorization was cancelled."
+      : planInvalidated
+        ? "The financial event was recorded and the staged plan became stale. No plan had been authorized."
+        : "The financial event was recorded. There was no active plan to invalidate.",
   };
 }
 
@@ -489,6 +502,8 @@ function renderForecastChart(forecast) {
   const points = forecast.points.map((point) => `${x(point.day)},${y(point.balanceMinor)}`).join(" ");
   const reserveY = y(forecast.reserveMinor);
   const axisDays = [0, 30, 60, 90].filter((day) => day <= forecast.horizonDays);
+  const tooltipWidth = 174;
+  const tooltipHeight = 62;
 
   return `
     <svg class="forecast-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Projected cash balance over ${forecast.horizonDays} days">
@@ -503,9 +518,28 @@ function renderForecastChart(forecast) {
       <line x1="${padX}" y1="${plotBottom}" x2="${width - padX}" y2="${plotBottom}" class="axis-line" />
       <polygon points="${points} ${x(forecast.horizonDays)},${plotBottom} ${padX},${plotBottom}" fill="url(#cashArea)" />
       <polyline points="${points}" class="cash-line" />
-      ${forecast.points.map((point) => `
-        <circle cx="${x(point.day)}" cy="${y(point.balanceMinor)}" r="5" class="cash-point" />
-      `).join("")}
+      ${forecast.points.map((point) => {
+        const pointX = x(point.day);
+        const pointY = y(point.balanceMinor);
+        const tooltipX = Math.max(padX, Math.min(width - padX - tooltipWidth, pointX - tooltipWidth / 2));
+        const tooltipY = Math.max(8, pointY - tooltipHeight - 14);
+        const reserveDifference = point.balanceMinor - forecast.reserveMinor;
+        const reserveText = reserveDifference >= 0
+          ? `${money(reserveDifference, true)} above reserve`
+          : `${money(Math.abs(reserveDifference), true)} below reserve`;
+        return `
+          <g class="forecast-point" tabindex="0" role="img" aria-label="${escapeHtml(`${point.label}, day ${point.day}, projected balance ${money(point.balanceMinor)}, ${reserveText}`)}">
+            <circle cx="${pointX}" cy="${pointY}" r="12" class="cash-point-hit" />
+            <circle cx="${pointX}" cy="${pointY}" r="5" class="cash-point" />
+            <g class="forecast-tooltip" aria-hidden="true">
+              <rect x="${tooltipX}" y="${tooltipY}" width="${tooltipWidth}" height="${tooltipHeight}" rx="9" />
+              <text x="${tooltipX + 11}" y="${tooltipY + 18}" class="tooltip-title">${escapeHtml(point.label)} · Day ${point.day}</text>
+              <text x="${tooltipX + 11}" y="${tooltipY + 37}" class="tooltip-value">${escapeHtml(money(point.balanceMinor))}</text>
+              <text x="${tooltipX + 11}" y="${tooltipY + 52}" class="tooltip-detail">${escapeHtml(reserveText)}</text>
+            </g>
+          </g>
+        `;
+      }).join("")}
       ${axisDays.map((day) => `
         <line x1="${x(day)}" y1="${plotBottom}" x2="${x(day)}" y2="${plotBottom + 6}" class="axis-tick" />
         <text x="${x(day)}" y="${height - 12}" text-anchor="middle" class="chart-label">${day} days</text>
@@ -721,9 +755,11 @@ function renderNewWorkspaceModal() {
         <form id="new-workspace-form">
           <div class="form-grid">
             <label>${fieldTitle("Workspace name", "A private label to help you distinguish this set of finances from your other workspaces.")}<input name="name" placeholder="For example, Personal finances" value="${escapeHtml(draft.name || "Personal finances")}" maxlength="60" required /></label>
-            <label>${fieldTitle("Workspace type", "Choose the closest use. It labels the workspace and does not change your permissions.")}<select name="workspaceType">
-              ${["personal", "household", "independent", "business"].map((type) => `<option value="${type}" ${draft.workspaceType === type ? "selected" : ""}>${type}</option>`).join("")}
+            <label>${fieldTitle("Workspace type", "Choose the closest use, or select Custom and name your own type. This label does not change permissions.")}<select name="workspaceType" data-custom-type-select="new-workspace-custom">
+              ${WORKSPACE_TYPES.map((type) => `<option value="${type}" ${draft.workspaceType === type ? "selected" : ""}>${type}</option>`).join("")}
+              <option value="custom" ${draft.workspaceType && !WORKSPACE_TYPES.includes(draft.workspaceType) ? "selected" : ""}>custom</option>
             </select></label>
+            <label id="new-workspace-custom" class="custom-type-field ${draft.workspaceType && !WORKSPACE_TYPES.includes(draft.workspaceType) ? "" : "is-hidden"}">${fieldTitle("Custom workspace type", "A short label such as Travel, Wedding, Education, or Side project.")}<input name="workspaceTypeCustom" placeholder="For example, Education" value="${escapeHtml(draft.workspaceType && !WORKSPACE_TYPES.includes(draft.workspaceType) ? draft.workspaceType : "")}" maxlength="40" /></label>
             <label>${fieldTitle("Currency", "Controls how money is displayed. CashLatch does not perform currency conversion.")}<select name="currency">
               ${["INR", "USD", "EUR", "GBP", "CAD", "AUD", "JPY"].map((currency) => `<option value="${currency}" ${(draft.currency || "INR") === currency ? "selected" : ""}>${currency}</option>`).join("")}
             </select></label>
@@ -772,9 +808,11 @@ function renderSettingsModal() {
         <form id="settings-form">
           <div class="form-grid">
             <label>${fieldTitle("Workspace name", "A private label used to identify this workspace.")}<input name="workspaceName" placeholder="Workspace name" value="${escapeHtml(state.name)}" maxlength="60" required /></label>
-            <label>${fieldTitle("Workspace type", "Describes whether these finances are personal, shared, freelance, or business-related.")}<select name="workspaceType">
-              ${["personal", "household", "independent", "business"].map((type) => `<option value="${type}" ${state.workspaceType === type ? "selected" : ""}>${type}</option>`).join("")}
+            <label>${fieldTitle("Workspace type", "Describes what this workspace is for. Select Custom to use your own label.")}<select name="workspaceType" data-custom-type-select="settings-custom">
+              ${WORKSPACE_TYPES.map((type) => `<option value="${type}" ${state.workspaceType === type ? "selected" : ""}>${type}</option>`).join("")}
+              <option value="custom" ${!WORKSPACE_TYPES.includes(state.workspaceType) ? "selected" : ""}>custom</option>
             </select></label>
+            <label id="settings-custom" class="custom-type-field ${!WORKSPACE_TYPES.includes(state.workspaceType) ? "" : "is-hidden"}">${fieldTitle("Custom workspace type", "A short label that explains what this workspace is for.")}<input name="workspaceTypeCustom" placeholder="For example, Wedding" value="${escapeHtml(!WORKSPACE_TYPES.includes(state.workspaceType) ? state.workspaceType : "")}" maxlength="40" /></label>
             <label>${fieldTitle("Workspace currency", "Changes number formatting only; existing values are not converted.")}<select name="currency">
               ${["INR", "USD", "EUR", "GBP", "CAD", "AUD", "JPY"].map((currency) => `<option value="${currency}" ${state.currency === currency ? "selected" : ""}>${currency}</option>`).join("")}
             </select></label>
@@ -847,19 +885,25 @@ function render() {
   app.innerHTML = `
     <div class="app-shell">
       <header class="topbar">
-        <div class="topbar-brand-group">${renderBrand()}<button class="back-to-workspaces" data-action="back-to-workspaces">← Workspaces</button></div>
-        <div class="workspace-switcher">
+        <div class="topbar-brand-group">${renderBrand()}</div>
+        <nav class="workspace-navigation" aria-label="Workspace controls">
+          <button class="back-to-workspaces" data-action="back-to-workspaces">← Workspaces</button>
+          <div class="workspace-switcher">
           <label for="workspace-select">Workspace</label>
           <select id="workspace-select">
             ${workspaces.map((workspace) => `<option value="${workspace.id}" ${workspace.id === state.id ? "selected" : ""}>${escapeHtml(workspace.name)}${workspace.isDemo ? " · Demo" : ""}</option>`).join("")}
           </select>
-          <button class="add-workspace-button" data-action="new-workspace">+ New workspace</button>
-        </div>
-        <div class="topbar-actions">
-          <button class="ghost-button" data-action="import-csv">Import CSV</button>
-          <button class="ghost-button" data-action="settings">Edit workspace</button>
-          <button class="secondary-button" data-action="load-demo">Try demo</button>
-        </div>
+          </div>
+          <button class="add-workspace-button" data-action="new-workspace"><span aria-hidden="true">+</span><span>New workspace</span></button>
+          <details class="topbar-menu">
+            <summary aria-label="Open workspace actions">Actions <span aria-hidden="true">▾</span></summary>
+            <div class="topbar-menu-popover">
+              <button data-action="import-csv"><span>Import CSV</span><small>Add transaction history</small></button>
+              <button data-action="settings"><span>Edit workspace</span><small>Balances, goals and limits</small></button>
+              <button data-action="load-demo"><span>Try fictional demo</span><small>Open sample data separately</small></button>
+            </div>
+          </details>
+        </nav>
       </header>
 
       <main>
@@ -1112,12 +1156,27 @@ function bindEvents() {
     activateWorkspace(event.target.value);
   });
 
+  document.querySelectorAll("[data-custom-type-select]").forEach((select) => {
+    const updateCustomTypeField = () => {
+      const field = document.getElementById(select.dataset.customTypeSelect);
+      if (!field) return;
+      const isCustom = select.value === "custom";
+      field.classList.toggle("is-hidden", !isCustom);
+      const input = field.querySelector("input");
+      if (input) input.required = isCustom;
+    };
+    select.addEventListener("change", updateCustomTypeField);
+    updateCustomTypeField();
+  });
+
   document.querySelector("#new-workspace-form")?.addEventListener("submit", (event) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     proposeWorkspace({
       name: data.get("name"),
-      workspaceType: data.get("workspaceType"),
+      workspaceType: data.get("workspaceType") === "custom"
+        ? String(data.get("workspaceTypeCustom") || "custom").trim().slice(0, 40)
+        : data.get("workspaceType"),
       currency: data.get("currency"),
       checking: data.get("checking"),
       monthlyIncome: data.get("monthlyIncome"),
@@ -1153,7 +1212,9 @@ function bindEvents() {
     const data = new FormData(event.currentTarget);
     mutateFinancialState((next) => {
       next.name = String(data.get("workspaceName") || next.name).trim().slice(0, 60);
-      next.workspaceType = String(data.get("workspaceType"));
+      next.workspaceType = data.get("workspaceType") === "custom"
+        ? String(data.get("workspaceTypeCustom") || "custom").trim().slice(0, 40)
+        : String(data.get("workspaceType"));
       next.currency = String(data.get("currency"));
       next.checkingMinor = toMinorUnits(data.get("checking"));
       next.monthlyIncomeMinor = toMinorUnits(data.get("monthlyIncome"));

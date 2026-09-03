@@ -2068,3 +2068,245 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     width: 100%;
   }
 }
+
+/* Compact workspace navigation and interactive forecast */
+.topbar {
+  height: auto;
+  min-height: 78px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 20px;
+}
+
+.workspace-navigation {
+  min-width: 0;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.workspace-navigation .workspace-switcher {
+  min-width: 0;
+  margin: 0;
+}
+
+.workspace-navigation .workspace-switcher select {
+  width: clamp(150px, 18vw, 230px);
+  min-width: 0;
+}
+
+.topbar-menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.topbar-menu summary {
+  min-height: 40px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  color: var(--text);
+  background: #10231d;
+  font-size: 12px;
+  font-weight: 750;
+  list-style: none;
+  cursor: pointer;
+}
+
+.topbar-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.topbar-menu[open] summary,
+.topbar-menu summary:hover {
+  border-color: rgba(110, 231, 183, 0.42);
+  color: var(--green-bright);
+  background: #153329;
+}
+
+.topbar-menu-popover {
+  width: 238px;
+  position: absolute;
+  top: calc(100% + 9px);
+  right: 0;
+  z-index: 60;
+  padding: 7px;
+  display: grid;
+  gap: 3px;
+  border: 1px solid #36564b;
+  border-radius: 13px;
+  background: #0b1b16;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+}
+
+.topbar-menu-popover button {
+  width: 100%;
+  padding: 10px 11px;
+  display: grid;
+  gap: 3px;
+  border: 0;
+  border-radius: 9px;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+}
+
+.topbar-menu-popover button:hover,
+.topbar-menu-popover button:focus-visible {
+  background: #153329;
+}
+
+.topbar-menu-popover span {
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.topbar-menu-popover small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.custom-type-field.is-hidden {
+  display: none;
+}
+
+.forecast-point {
+  cursor: help;
+  outline: none;
+}
+
+.cash-point-hit {
+  fill: transparent;
+}
+
+.forecast-tooltip {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.forecast-point:hover .forecast-tooltip,
+.forecast-point:focus .forecast-tooltip {
+  opacity: 1;
+}
+
+.forecast-point:hover .cash-point,
+.forecast-point:focus .cash-point {
+  fill: var(--green-bright);
+  stroke: #07100d;
+}
+
+.forecast-tooltip rect {
+  fill: #07120e;
+  stroke: #4a7465;
+  stroke-width: 1;
+  filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.32));
+}
+
+.forecast-tooltip text {
+  dominant-baseline: auto;
+}
+
+.tooltip-title {
+  fill: #a8bdb5;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.tooltip-value {
+  fill: var(--green-bright);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.tooltip-detail {
+  fill: #d5e4de;
+  font-size: 8px;
+}
+
+@media (max-width: 1100px) {
+  .topbar .brand small,
+  .workspace-navigation .workspace-switcher label {
+    display: none;
+  }
+
+  .workspace-navigation .workspace-switcher select {
+    width: clamp(135px, 21vw, 190px);
+  }
+
+  .back-to-workspaces,
+  .add-workspace-button {
+    padding-inline: 11px;
+  }
+}
+
+@media (max-width: 820px) {
+  .topbar {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding-block: 11px;
+  }
+
+  .topbar-brand-group {
+    width: auto;
+  }
+
+  .workspace-navigation {
+    width: 100%;
+    margin: 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+  }
+
+  .workspace-navigation .workspace-switcher,
+  .workspace-navigation .workspace-switcher select {
+    width: 100%;
+  }
+
+  .add-workspace-button span:last-child {
+    display: none;
+  }
+
+  .add-workspace-button {
+    width: 40px;
+    padding: 0;
+    font-size: 18px;
+  }
+}
+
+@media (max-width: 480px) {
+  .back-to-workspaces {
+    width: 40px;
+    padding: 0;
+    overflow: hidden;
+    font-size: 0;
+  }
+
+  .back-to-workspaces::before {
+    content: "←";
+    font-size: 17px;
+  }
+
+  .topbar-menu summary {
+    width: 42px;
+    padding: 0;
+    justify-content: center;
+    overflow: hidden;
+    font-size: 0;
+  }
+
+  .topbar-menu summary::before {
+    content: "•••";
+    font-size: 13px;
+    letter-spacing: 1px;
+  }
+
+  .topbar-menu summary span {
+    display: none;
+  }
+}
